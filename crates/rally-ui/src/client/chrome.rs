@@ -2,7 +2,9 @@
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme, IconName, Sizable, StyledExt, Theme, ThemeMode};
+use gpui_kit::component::{
+    ActiveTheme, IconName, Selectable, Sizable, StyledExt, Theme, ThemeMode,
+};
 use gpui_kit::{Context, SharedString, div, prelude::*, px};
 
 use super::view::ClientView;
@@ -121,6 +123,19 @@ impl ClientView {
                         };
                         Theme::change(mode, Some(window), cx);
                     }),
+            )
+            .child(
+                Button::new("console-toggle")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::SquareTerminal)
+                    .label("Console")
+                    .selected(self.console_open)
+                    .tooltip("Toggle console")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.console_open = !this.console_open;
+                        cx.notify();
+                    })),
             )
             .when(sending, |this| {
                 this.child(

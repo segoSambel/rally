@@ -17,6 +17,7 @@ use rally_core::{
 };
 
 use super::model::{ClientModel, RequestCompleted, RequestState};
+use crate::console::{CloseRequested, ConsoleModel, ConsolePanel};
 use crate::history::{HistoryModel, HistoryPanel, OpenEntry};
 use crate::widgets::{
     AuthEditor, BodyDraft, BodyEditor, KeyValueEditor, MethodItem, MethodSelect, status_color,
@@ -26,6 +27,9 @@ pub struct ClientView {
     pub(super) model: Entity<ClientModel>,
     pub(super) history: Entity<HistoryModel>,
     history_panel: Entity<HistoryPanel>,
+    pub(super) console: Entity<ConsoleModel>,
+    console_panel: Entity<ConsolePanel>,
+    pub(super) console_open: bool,
     pub(super) sidebar_open: bool,
     /// Briefly true after copying, to show a confirmation icon.
     copied: bool,
@@ -48,6 +52,8 @@ impl ClientView {
     pub fn new(model: Entity<ClientModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let history = cx.new(|_| HistoryModel::new());
         let history_panel = cx.new(|cx| HistoryPanel::new(history.clone(), cx));
+        let console = cx.new(|_| ConsoleModel::new());
+        let console_panel = cx.new(|cx| ConsolePanel::new(console.clone(), cx));
         let methods: MethodSelect = Method::ALL.into_iter().map(MethodItem).collect();
         let method_select =
             cx.new(|cx| SelectState::new(methods, Some(IndexPath::default()), window, cx));
@@ -76,6 +82,7 @@ impl ClientView {
             cx.subscribe_in(&method_select, window, Self::on_method_event),
             cx.subscribe(&model, Self::on_request_completed),
             cx.subscribe_in(&history_panel, window, Self::on_open_entry),
+            cx.subscribe(&console_panel, Self::on_console_close),
             // Re-render when a table changes so the tab counts stay current.
             cx.observe(&params, |_, _, cx| cx.notify()),
             cx.observe(&headers, |_, _, cx| cx.notify()),
@@ -85,6 +92,9 @@ impl ClientView {
             model,
             history,
             history_panel,
+            console,
+            console_panel,
+            console_open: false,
             sidebar_open: true,
             copied: false,
             method: Method::Get,
@@ -120,12 +130,24 @@ impl ClientView {
         cx.notify();
     }
 
+    fn on_console_close(
+        &mut self,
+        _panel: Entity<ConsolePanel>,
+        _event: &CloseRequested,
+        cx: &mut Context<Self>,
+    ) {
+        self.console_open = false;
+        cx.notify();
+    }
+
     fn on_request_completed(
         &mut self,
         _model: Entity<ClientModel>,
         event: &RequestCompleted,
         cx: &mut Context<Self>,
     ) {
+        self.console
+            .update(cx, |console, cx| console.record(event.entry.clone(), cx));
         self.history.update(cx, |history, cx| {
             history.record(
                 event.draft.clone(),
@@ -612,6 +634,16 @@ impl Render for ClientView {
                             ),
                     ),
             )
+            .when(self.console_open, |this| {
+                this.child(
+                    div()
+                        .h(px(280.))
+                        .flex_shrink_0()
+                        .border_t_1()
+                        .border_color(border)
+                        .child(self.console_panel.clone()),
+                )
+            })
             .child(self.render_status_bar(cx))
     }
 }

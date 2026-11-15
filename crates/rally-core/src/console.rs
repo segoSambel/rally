@@ -7,7 +7,7 @@ use crate::response::ApiResponse;
 /// Entries kept in the console; the oldest are dropped first.
 pub const MAX_ENTRIES: usize = 200;
 /// Longest response body kept for display, in bytes.
-pub const MAX_BODY_PREVIEW: usize = 64 * 1024;
+pub const MAX_BODY_PREVIEW: usize = 16 * 1024;
 
 /// A request as it was sent.
 #[derive(Clone)]

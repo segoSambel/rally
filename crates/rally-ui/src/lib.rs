@@ -1,4 +1,5 @@
 mod client;
+mod console;
 mod history;
 mod theme;
 mod widgets;

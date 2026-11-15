@@ -34,6 +34,7 @@ impl Method {
     }
 }
 
+#[derive(Clone)]
 pub struct ApiRequest {
     pub method: Method,
     pub url: String,

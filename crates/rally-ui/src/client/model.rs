@@ -1,6 +1,6 @@
 use gpui_kit::{Context, EventEmitter};
 
-use rally_core::{ApiRequest, ApiResponse, RequestDraft, send};
+use rally_core::{ApiRequest, ApiResponse, ConsoleEntry, RequestDraft, send};
 
 pub enum RequestState {
     Idle,
@@ -16,6 +16,8 @@ pub struct ClientModel {
 /// Emitted when a sent request finishes, carrying the draft it was sent from.
 pub struct RequestCompleted {
     pub draft: RequestDraft,
+    /// The request as sent and its outcome, for the console.
+    pub entry: ConsoleEntry,
     pub status: Option<u16>,
     pub elapsed_ms: u64,
     pub error: Option<String>,
@@ -52,21 +54,25 @@ impl ClientModel {
         self.state = RequestState::Sending;
         cx.notify();
 
+        let sent = request.clone();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
                 .spawn(async move { send(request) })
                 .await;
             this.update(cx, |this, cx| {
+                let entry = ConsoleEntry::new(&sent, &result);
                 let completed = match &result {
                     Ok(response) => RequestCompleted {
                         draft,
+                        entry,
                         status: Some(response.status),
                         elapsed_ms: response.elapsed.as_millis() as u64,
                         error: None,
                     },
                     Err(message) => RequestCompleted {
                         draft,
+                        entry,
                         status: None,
                         elapsed_ms: 0,
                         error: Some(message.clone()),
