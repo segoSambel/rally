@@ -1,0 +1,6 @@
+# Store text as LF in the repository and check it out as LF on every platform.
+* text=auto eol=lf
+
+# Binary files.
+*.ico binary
+*.png binary
