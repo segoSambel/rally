@@ -53,7 +53,7 @@ impl ClientView {
         cx: &mut Context<Self>,
     ) {
         let text = match model.read(cx).state() {
-            RequestState::Done(response) => response.body.clone(),
+            RequestState::Done(response) => pretty_body(&response.body),
             _ => String::new(),
         };
         self.response_body
@@ -96,6 +96,13 @@ impl ClientView {
         };
         self.model.update(cx, |model, cx| model.send(request, cx));
     }
+}
+
+/// Pretty-prints JSON; any other body is shown unchanged.
+fn pretty_body(body: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(body)
+        .and_then(|value| serde_json::to_string_pretty(&value))
+        .unwrap_or_else(|_| body.to_string())
 }
 
 impl ClientView {
