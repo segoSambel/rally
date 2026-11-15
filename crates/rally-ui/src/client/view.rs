@@ -2,71 +2,20 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{
     Editor, EditorState, Input, InputEvent, InputState, Textarea, TextareaState,
 };
-use gpui_kit::component::searchable_list::SearchableListItem;
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{
     ActiveTheme, Icon, IconName, IndexPath, Sizable, StyledExt, Theme, ThemeMode,
 };
-use gpui_kit::{
-    AnyElement, App, Context, Entity, Hsla, SharedString, Subscription, Window, div, prelude::*,
-    px, rgb,
-};
+use gpui_kit::{Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
 
 use rally_core::{
     ApiRequest, ApiResponse, COMMON_HEADER_NAMES, Method, format_body, format_duration, format_size,
 };
 
-use super::auth_editor::AuthEditor;
-use super::client_model::{ClientModel, RequestState};
-use super::key_value_editor::KeyValueEditor;
-
-type MethodSelect = Vec<MethodItem>;
-
-/// Postman-style color for each HTTP method.
-fn method_color(method: Method) -> Hsla {
-    match method {
-        Method::Get => rgb(0x0cbb52),
-        Method::Post => rgb(0xe8a000),
-        Method::Put => rgb(0x097bed),
-        Method::Patch => rgb(0x7d65e8),
-        Method::Delete => rgb(0xf05050),
-    }
-    .into()
-}
-
-#[derive(Clone)]
-struct MethodItem(Method);
-
-impl SearchableListItem for MethodItem {
-    type Value = Method;
-
-    fn title(&self) -> SharedString {
-        self.0.as_str().into()
-    }
-
-    fn display_title(&self) -> Option<AnyElement> {
-        Some(self.render_label().into_any_element())
-    }
-
-    fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        self.render_label()
-    }
-
-    fn value(&self) -> &Self::Value {
-        &self.0
-    }
-}
-
-impl MethodItem {
-    fn render_label(&self) -> impl IntoElement {
-        div()
-            .font_semibold()
-            .text_color(method_color(self.0))
-            .child(self.0.as_str())
-    }
-}
+use super::model::{ClientModel, RequestState};
+use crate::widgets::{AuthEditor, KeyValueEditor, MethodItem, MethodSelect};
 
 pub struct ClientView {
     model: Entity<ClientModel>,

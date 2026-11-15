@@ -1,7 +1,5 @@
-mod auth_editor;
-mod client_model;
-mod client_view;
-mod key_value_editor;
+mod model;
+mod view;
 
-pub use client_model::ClientModel;
-pub use client_view::ClientView;
+pub use model::ClientModel;
+pub use view::ClientView;
