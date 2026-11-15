@@ -34,8 +34,6 @@ had a release yet, so everything so far is listed under Unreleased.
 
 ### Changed
 
-- Replaced the counter and todo demo with the API client.
-- Renamed the project from `learn-gpui-windows` to `rally`.
 - Split the single crate into a Cargo workspace: `rally-core` (no GPUI), `rally-ui` and `rally`.
 
 ### Known issues
