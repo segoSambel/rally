@@ -5,7 +5,9 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::tag::Tag;
-use gpui_kit::component::{ActiveTheme, Icon, IconName, IndexPath, Sizable, StyledExt};
+use gpui_kit::component::{
+    ActiveTheme, Icon, IconName, IndexPath, Sizable, StyledExt, Theme, ThemeMode,
+};
 use gpui_kit::{
     AnyElement, App, Context, Entity, Hsla, SharedString, Subscription, Window, div, prelude::*,
     px, rgb,
@@ -210,6 +212,24 @@ impl ClientView {
                     .label("Send")
                     .loading(sending)
                     .on_click(cx.listener(|this, _, _, cx| this.send(cx))),
+            )
+            .child(
+                Button::new("theme-toggle")
+                    .ghost()
+                    .icon(if cx.theme().is_dark() {
+                        IconName::Sun
+                    } else {
+                        IconName::Moon
+                    })
+                    .tooltip("Toggle light/dark theme")
+                    .on_click(|_, window, cx| {
+                        let mode = if cx.theme().is_dark() {
+                            ThemeMode::Light
+                        } else {
+                            ThemeMode::Dark
+                        };
+                        Theme::change(mode, Some(window), cx);
+                    }),
             )
     }
 
