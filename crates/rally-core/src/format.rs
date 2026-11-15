@@ -27,3 +27,14 @@ pub fn format_size(bytes: usize) -> String {
         format!("{bytes} B")
     }
 }
+
+/// "just now", "5m ago", "3h ago", "2d ago".
+pub fn format_ago(now: u64, at: u64) -> String {
+    let secs = now.saturating_sub(at);
+    match secs {
+        0..=59 => "just now".to_string(),
+        60..=3599 => format!("{}m ago", secs / 60),
+        3600..=86399 => format!("{}h ago", secs / 3600),
+        _ => format!("{}d ago", secs / 86400),
+    }
+}

@@ -1,8 +1,12 @@
+use serde::{Deserialize, Serialize};
+
 use crate::auth::Auth;
 use crate::url::with_query;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum Method {
+    #[default]
     Get,
     Post,
     Put,
