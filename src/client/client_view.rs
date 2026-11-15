@@ -204,8 +204,31 @@ impl ClientView {
             .bg(cx.theme().tab_bar)
             .border_b_1()
             .border_color(cx.theme().border)
-            .child(div().w(px(120.)).child(Select::new(&self.method_select)))
-            .child(div().flex_1().child(Input::new(&self.url)))
+            .child(
+                // One bordered field holding the method picker and the URL, like Bruno.
+                div()
+                    .h_flex()
+                    .flex_1()
+                    .h(px(40.))
+                    .px_1()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().background)
+                    .child(
+                        div()
+                            .w(px(112.))
+                            .child(Select::new(&self.method_select).appearance(false)),
+                    )
+                    .child(div().w(px(1.)).h(px(20.)).bg(cx.theme().border))
+                    .child(
+                        div().flex_1().child(
+                            Input::new(&self.url)
+                                .appearance(false)
+                                .focus_bordered(false),
+                        ),
+                    ),
+            )
             .child(
                 Button::new("send")
                     .primary()
