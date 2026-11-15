@@ -1,4 +1,5 @@
 mod client;
+mod history;
 mod theme;
 mod widgets;
 
@@ -20,7 +21,7 @@ pub fn run() {
 }
 
 fn open_main_window(cx: &mut App) {
-    let bounds = Bounds::centered(None, size(px(960.), px(720.)), cx);
+    let bounds = Bounds::centered(None, size(px(1160.), px(720.)), cx);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {

@@ -87,6 +87,38 @@ impl AuthEditor {
         }
     }
 
+    /// Replaces everything entered. The select-backed fields are assigned directly because
+    /// setting a select's value does not emit a selection event.
+    pub fn set_draft(&mut self, draft: &AuthDraft, window: &mut Window, cx: &mut Context<Self>) {
+        self.kind = draft.kind;
+        self.in_query = draft.key_in_query;
+
+        let kind = KINDS[match draft.kind {
+            AuthKind::None => 0,
+            AuthKind::Bearer => 1,
+            AuthKind::Basic => 2,
+            AuthKind::ApiKey => 3,
+        }];
+        let location = LOCATIONS[usize::from(draft.key_in_query)];
+        self.kind_select.update(cx, |select, cx| {
+            select.set_selected_value(&kind, window, cx)
+        });
+        self.location_select.update(cx, |select, cx| {
+            select.set_selected_value(&location, window, cx)
+        });
+
+        for (input, text) in [
+            (&self.token, &draft.token),
+            (&self.username, &draft.username),
+            (&self.password, &draft.password),
+            (&self.key_name, &draft.key_name),
+            (&self.key_value, &draft.key_value),
+        ] {
+            input.update(cx, |input, cx| input.set_value(text.clone(), window, cx));
+        }
+        cx.notify();
+    }
+
     /// Everything currently entered, including fields of schemes that are not selected.
     pub fn draft(&self, cx: &gpui_kit::App) -> AuthDraft {
         let read = |input: &Entity<InputState>| input.read(cx).value().to_string();

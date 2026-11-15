@@ -51,7 +51,7 @@ impl KeyValueEditor {
             active: None,
             hovering_suggestions: false,
         };
-        this.push_row(window, cx);
+        this.push_row(None, window, cx);
         this
     }
 
@@ -79,13 +79,45 @@ impl KeyValueEditor {
             .count()
     }
 
-    fn push_row(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Replaces the table contents. Inputs are built with their text already set, so no
+    /// change events fire and the autocomplete dropdown stays closed.
+    pub fn set_rows(&mut self, rows: &[KeyValueRow], window: &mut Window, cx: &mut Context<Self>) {
+        self.rows.clear();
+        self.active = None;
+        self.hovering_suggestions = false;
+        for row in rows {
+            self.push_row(Some(row), window, cx);
+        }
+        self.ensure_trailing_row(window, cx);
+        cx.notify();
+    }
+
+    fn push_row(
+        &mut self,
+        initial: Option<&KeyValueRow>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let id = self.next_id;
         self.next_id += 1;
 
-        let key = cx.new(|cx| InputState::new(window, cx).placeholder(self.key_placeholder));
-        let value = cx.new(|cx| InputState::new(window, cx).placeholder("Value"));
-        let description = cx.new(|cx| InputState::new(window, cx).placeholder("Description"));
+        let text =
+            |select: fn(&KeyValueRow) -> &String| initial.map(select).cloned().unwrap_or_default();
+        let key = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(self.key_placeholder)
+                .default_value(text(|row| &row.key))
+        });
+        let value = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Value")
+                .default_value(text(|row| &row.value))
+        });
+        let description = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Description")
+                .default_value(text(|row| &row.description))
+        });
         let subscriptions = vec![
             cx.subscribe_in(&key, window, move |this, _, event, window, cx| {
                 this.on_key_event(id, event, window, cx)
@@ -99,7 +131,7 @@ impl KeyValueEditor {
         ];
         self.rows.push(HeaderRow {
             id,
-            enabled: true,
+            enabled: initial.is_none_or(|row| row.enabled),
             key,
             value,
             description,
@@ -115,7 +147,7 @@ impl KeyValueEditor {
                 .all(|input| input.read(cx).value().is_empty())
         });
         if !last_is_empty {
-            self.push_row(window, cx);
+            self.push_row(None, window, cx);
         }
     }
 

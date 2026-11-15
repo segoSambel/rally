@@ -15,11 +15,15 @@ use rally_core::{
     format_size,
 };
 
-use super::model::{ClientModel, RequestState};
-use crate::widgets::{AuthEditor, KeyValueEditor, MethodItem, MethodSelect};
+use super::model::{ClientModel, RequestCompleted, RequestState};
+use crate::history::{HistoryModel, HistoryPanel, OpenEntry};
+use crate::widgets::{AuthEditor, KeyValueEditor, MethodItem, MethodSelect, status_color};
 
 pub struct ClientView {
     model: Entity<ClientModel>,
+    history: Entity<HistoryModel>,
+    history_panel: Entity<HistoryPanel>,
+    sidebar_open: bool,
     method: Method,
     method_select: Entity<SelectState<MethodSelect>>,
     url: Entity<InputState>,
@@ -35,6 +39,8 @@ pub struct ClientView {
 
 impl ClientView {
     pub fn new(model: Entity<ClientModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let history = cx.new(|_| HistoryModel::new());
+        let history_panel = cx.new(|cx| HistoryPanel::new(history.clone(), cx));
         let methods: MethodSelect = Method::ALL.into_iter().map(MethodItem).collect();
         let method_select =
             cx.new(|cx| SelectState::new(methods, Some(IndexPath::default()), window, cx));
@@ -53,12 +59,17 @@ impl ClientView {
             cx.observe_in(&model, window, Self::on_model_change),
             cx.subscribe_in(&url, window, Self::on_url_event),
             cx.subscribe_in(&method_select, window, Self::on_method_event),
+            cx.subscribe(&model, Self::on_request_completed),
+            cx.subscribe_in(&history_panel, window, Self::on_open_entry),
             // Re-render when a table changes so the tab counts stay current.
             cx.observe(&params, |_, _, cx| cx.notify()),
             cx.observe(&headers, |_, _, cx| cx.notify()),
         ];
         Self {
             model,
+            history,
+            history_panel,
+            sidebar_open: true,
             method: Method::Get,
             method_select,
             url,
@@ -86,6 +97,55 @@ impl ClientView {
         self.response_body.update(cx, |state, cx| {
             state.set_highlighter(if is_json { "json" } else { "text" }, cx);
             state.set_value(text, window, cx);
+        });
+        cx.notify();
+    }
+
+    fn on_request_completed(
+        &mut self,
+        _model: Entity<ClientModel>,
+        event: &RequestCompleted,
+        cx: &mut Context<Self>,
+    ) {
+        self.history.update(cx, |history, cx| {
+            history.record(
+                event.draft.clone(),
+                event.status,
+                event.elapsed_ms,
+                event.error.clone(),
+                cx,
+            )
+        });
+    }
+
+    fn on_open_entry(
+        &mut self,
+        _panel: &Entity<HistoryPanel>,
+        event: &OpenEntry,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.restore(&event.0, window, cx);
+    }
+
+    /// Loads a draft back into the editors.
+    fn restore(&mut self, draft: &RequestDraft, window: &mut Window, cx: &mut Context<Self>) {
+        // The select does not emit an event when set from code, so assign the field too.
+        self.method = draft.method;
+        self.method_select.update(cx, |select, cx| {
+            select.set_selected_value(&draft.method, window, cx)
+        });
+        self.url
+            .update(cx, |url, cx| url.set_value(draft.url.clone(), window, cx));
+        self.params
+            .update(cx, |params, cx| params.set_rows(&draft.params, window, cx));
+        self.headers.update(cx, |headers, cx| {
+            headers.set_rows(&draft.headers, window, cx)
+        });
+        self.auth
+            .update(cx, |auth, cx| auth.set_draft(&draft.auth, window, cx));
+        self.body.update(cx, |body, cx| {
+            body.set_value(draft.body.clone(), window, cx)
         });
         cx.notify();
     }
@@ -136,7 +196,8 @@ impl ClientView {
         }
 
         let request = draft.build();
-        self.model.update(cx, |model, cx| model.send(request, cx));
+        self.model
+            .update(cx, |model, cx| model.send(request, draft, cx));
     }
 }
 
@@ -152,6 +213,20 @@ impl ClientView {
             .bg(cx.theme().tab_bar)
             .border_b_1()
             .border_color(cx.theme().border)
+            .child(
+                Button::new("sidebar-toggle")
+                    .ghost()
+                    .icon(if self.sidebar_open {
+                        IconName::PanelLeftClose
+                    } else {
+                        IconName::PanelLeftOpen
+                    })
+                    .tooltip("Toggle history")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.sidebar_open = !this.sidebar_open;
+                        cx.notify();
+                    })),
+            )
             .child(
                 // One bordered field holding the method picker and the URL, like Bruno.
                 div()
@@ -288,11 +363,7 @@ impl ClientView {
 
         match self.model.read(cx).state() {
             RequestState::Done(response) => {
-                let color = match response.status {
-                    200..=299 => theme.success,
-                    400..=599 => theme.danger,
-                    _ => theme.warning,
-                };
+                let color = status_color(theme, response.status);
                 let status = format!("{} {}", response.status, response.reason);
                 row.child(
                     div()
@@ -407,20 +478,39 @@ impl ClientView {
 
 impl Render for ClientView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let border = cx.theme().border;
+
         div()
             .size_full()
-            .v_flex()
+            .h_flex()
+            .items_stretch()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(self.render_url_bar(cx))
+            .when(self.sidebar_open, |this| {
+                this.child(
+                    div()
+                        .w(px(240.))
+                        .flex_shrink_0()
+                        .border_r_1()
+                        .border_color(border)
+                        .child(self.history_panel.clone()),
+                )
+            })
             .child(
                 div()
-                    .h_flex()
-                    .items_stretch()
                     .flex_1()
-                    .min_h_0()
-                    .child(self.render_request_pane(cx))
-                    .child(self.render_response_pane(cx)),
+                    .min_w_0()
+                    .v_flex()
+                    .child(self.render_url_bar(cx))
+                    .child(
+                        div()
+                            .h_flex()
+                            .items_stretch()
+                            .flex_1()
+                            .min_h_0()
+                            .child(self.render_request_pane(cx))
+                            .child(self.render_response_pane(cx)),
+                    ),
             )
     }
 }
