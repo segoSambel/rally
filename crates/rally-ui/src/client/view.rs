@@ -17,6 +17,7 @@ use rally_core::{
 };
 
 use super::model::{ClientModel, RequestCompleted, RequestState};
+use super::tabs::RequestTab;
 use crate::console::{CloseRequested, ConsoleModel, ConsolePanel};
 use crate::history::{HistoryModel, HistoryPanel, OpenEntry};
 use crate::widgets::{
@@ -24,6 +25,9 @@ use crate::widgets::{
 };
 
 pub struct ClientView {
+    pub(super) tabs: Vec<RequestTab>,
+    pub(super) active_tab: usize,
+    /// The active tab's model.
     pub(super) model: Entity<ClientModel>,
     pub(super) history: Entity<HistoryModel>,
     history_panel: Entity<HistoryPanel>,
@@ -32,7 +36,7 @@ pub struct ClientView {
     pub(super) console_open: bool,
     pub(super) sidebar_open: bool,
     /// Briefly true after copying, to show a confirmation icon.
-    copied: bool,
+    pub(super) copied: bool,
     pub(super) method: Method,
     method_select: Entity<SelectState<MethodSelect>>,
     pub(super) url: Entity<InputState>,
@@ -43,8 +47,8 @@ pub struct ClientView {
     response_body: Entity<EditorState>,
     /// Whether the last response body was JSON, for the format pill.
     response_is_json: bool,
-    request_tab: usize,
-    response_tab: usize,
+    pub(super) request_tab: usize,
+    pub(super) response_tab: usize,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -76,11 +80,10 @@ impl ClientView {
                 .soft_wrap(true)
         });
 
+        let first_tab = RequestTab::blank(model.clone(), Self::watch(&model, window, cx));
         let subscriptions = vec![
-            cx.observe_in(&model, window, Self::on_model_change),
             cx.subscribe_in(&url, window, Self::on_url_event),
             cx.subscribe_in(&method_select, window, Self::on_method_event),
-            cx.subscribe(&model, Self::on_request_completed),
             cx.subscribe_in(&history_panel, window, Self::on_open_entry),
             cx.subscribe(&console_panel, Self::on_console_close),
             // Re-render when a table changes so the tab counts stay current.
@@ -89,6 +92,8 @@ impl ClientView {
             cx.observe(&body, |_, _, cx| cx.notify()),
         ];
         Self {
+            tabs: vec![first_tab],
+            active_tab: 0,
             model,
             history,
             history_panel,
@@ -112,13 +117,21 @@ impl ClientView {
         }
     }
 
-    fn on_model_change(
+    /// A tab's model changed. Only the active tab's response is on screen.
+    pub(super) fn on_model_change(
         &mut self,
         model: Entity<ClientModel>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (text, is_json) = match model.read(cx).state() {
+        if model == self.model {
+            self.sync_response(window, cx);
+        }
+    }
+
+    /// Shows the active tab's response in the response editor.
+    pub(super) fn sync_response(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (text, is_json) = match self.model.read(cx).state() {
             RequestState::Done(response) => format_body(&response.body),
             _ => (String::new(), false),
         };
@@ -140,7 +153,7 @@ impl ClientView {
         cx.notify();
     }
 
-    fn on_request_completed(
+    pub(super) fn on_request_completed(
         &mut self,
         _model: Entity<ClientModel>,
         event: &RequestCompleted,
@@ -170,7 +183,12 @@ impl ClientView {
     }
 
     /// Loads a draft back into the editors.
-    fn restore(&mut self, draft: &RequestDraft, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn restore(
+        &mut self,
+        draft: &RequestDraft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // The select does not emit an event when set from code, so assign the field too.
         self.method = draft.method;
         self.method_select.update(cx, |select, cx| {
@@ -228,15 +246,6 @@ impl ClientView {
         .detach();
     }
 
-    /// Clears every editor, like opening a blank request.
-    pub(super) fn new_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let blank = RequestDraft {
-            body_kind: BodyKind::None,
-            ..Default::default()
-        };
-        self.restore(&blank, window, cx);
-    }
-
     fn on_method_event(
         &mut self,
         _select: &Entity<SelectState<MethodSelect>>,
@@ -266,7 +275,7 @@ impl ClientView {
     }
 
     /// The current editor contents.
-    fn snapshot(&self, cx: &Context<Self>) -> RequestDraft {
+    pub(super) fn snapshot(&self, cx: &Context<Self>) -> RequestDraft {
         let body = self.body.read(cx).draft(cx);
         RequestDraft {
             method: self.method,

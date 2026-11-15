@@ -23,10 +23,79 @@ fn tab_title(url: &str) -> String {
 }
 
 impl ClientView {
-    /// A single request tab (method and title) and a button for a new request.
+    /// One tab per request, each with a close button, and a button to open another.
     pub(super) fn render_tab_strip(&self, cx: &Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let title = tab_title(&self.url.read(cx).value());
+        let many = self.tabs.len() > 1;
+
+        let tabs = self.tabs.iter().enumerate().map(|(index, tab)| {
+            let active = index == self.active_tab;
+            // The live editors hold the active tab's request.
+            let (method, url) = if active {
+                (self.method, self.url.read(cx).value().to_string())
+            } else {
+                (tab.draft.method, tab.draft.url.clone())
+            };
+
+            div()
+                .h_flex()
+                .flex_shrink_0()
+                .h(px(34.))
+                .rounded_t_md()
+                .border_1()
+                .border_b_0()
+                .border_color(if active {
+                    theme.border
+                } else {
+                    gpui_kit::transparent_black()
+                })
+                .when(active, |this| this.bg(theme.background))
+                .when(!active, |this| {
+                    this.text_color(theme.muted_foreground)
+                        .hover(|style| style.bg(theme.muted.opacity(0.3)))
+                })
+                .child(
+                    div()
+                        .id(("request-tab", index))
+                        .h_flex()
+                        .gap_2()
+                        .h_full()
+                        .pl_3()
+                        .when(!many, |this| this.pr_3())
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.activate_tab(index, window, cx)
+                        }))
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_semibold()
+                                .text_color(method_color(method))
+                                .child(method.as_str()),
+                        )
+                        .child(
+                            div()
+                                .max_w(px(180.))
+                                .truncate()
+                                .text_sm()
+                                .child(SharedString::from(tab_title(&url))),
+                        ),
+                )
+                .when(many, |this| {
+                    this.child(
+                        div().px_1().child(
+                            Button::new(("close-tab", index))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Close)
+                                .tooltip("Close tab")
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.close_tab(index, window, cx)
+                                })),
+                        ),
+                    )
+                })
+        });
 
         div()
             .h_flex()
@@ -37,38 +106,22 @@ impl ClientView {
             .bg(theme.tab_bar)
             .child(
                 div()
+                    .id("request-tabs-scroll")
                     .h_flex()
-                    .gap_2()
-                    .h(px(34.))
-                    .px_3()
-                    .rounded_t_md()
-                    .border_1()
-                    .border_b_0()
-                    .border_color(theme.border)
-                    .bg(theme.background)
-                    .child(
-                        div()
-                            .text_xs()
-                            .font_semibold()
-                            .text_color(method_color(self.method))
-                            .child(self.method.as_str()),
-                    )
-                    .child(
-                        div()
-                            .max_w(px(320.))
-                            .truncate()
-                            .text_sm()
-                            .child(SharedString::from(title)),
-                    ),
+                    .items_end()
+                    .gap_1()
+                    .min_w_0()
+                    .overflow_x_scroll()
+                    .children(tabs),
             )
             .child(
                 div().h(px(34.)).h_flex().child(
-                    Button::new("new-request")
+                    Button::new("new-tab")
                         .ghost()
                         .small()
                         .icon(IconName::Plus)
-                        .tooltip("New request")
-                        .on_click(cx.listener(|this, _, window, cx| this.new_request(window, cx))),
+                        .tooltip("New tab")
+                        .on_click(cx.listener(|this, _, window, cx| this.new_tab(window, cx))),
                 ),
             )
     }
