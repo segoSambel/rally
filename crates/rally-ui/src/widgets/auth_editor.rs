@@ -3,18 +3,10 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::{ActiveTheme, IndexPath, StyledExt};
 use gpui_kit::{Context, Entity, Subscription, Window, div, prelude::*, px};
 
-use rally_core::{ApiKeyLocation, Auth};
+use rally_core::{AuthDraft, AuthKind};
 
 const KINDS: [&str; 4] = ["No Auth", "Bearer Token", "Basic Auth", "API Key"];
 const LOCATIONS: [&str; 2] = ["Header", "Query Params"];
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum AuthKind {
-    None,
-    Bearer,
-    Basic,
-    ApiKey,
-}
 
 pub struct AuthEditor {
     kind: AuthKind,
@@ -95,28 +87,18 @@ impl AuthEditor {
         }
     }
 
-    /// The scheme and values currently entered.
-    pub fn auth(&self, cx: &gpui_kit::App) -> Auth {
-        let read = |input: &Entity<InputState>| input.read(cx).value().trim().to_string();
+    /// Everything currently entered, including fields of schemes that are not selected.
+    pub fn draft(&self, cx: &gpui_kit::App) -> AuthDraft {
+        let read = |input: &Entity<InputState>| input.read(cx).value().to_string();
 
-        match self.kind {
-            AuthKind::None => Auth::None,
-            AuthKind::Bearer => Auth::Bearer {
-                token: read(&self.token),
-            },
-            AuthKind::Basic => Auth::Basic {
-                username: read(&self.username),
-                password: self.password.read(cx).value().to_string(),
-            },
-            AuthKind::ApiKey => Auth::ApiKey {
-                name: read(&self.key_name),
-                value: read(&self.key_value),
-                location: if self.in_query {
-                    ApiKeyLocation::Query
-                } else {
-                    ApiKeyLocation::Header
-                },
-            },
+        AuthDraft {
+            kind: self.kind,
+            token: read(&self.token),
+            username: read(&self.username),
+            password: read(&self.password),
+            key_name: read(&self.key_name),
+            key_value: read(&self.key_value),
+            key_in_query: self.in_query,
         }
     }
 }

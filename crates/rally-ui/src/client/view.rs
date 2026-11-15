@@ -11,7 +11,8 @@ use gpui_kit::component::{
 use gpui_kit::{Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
 
 use rally_core::{
-    ApiRequest, ApiResponse, COMMON_HEADER_NAMES, Method, format_body, format_duration, format_size,
+    ApiResponse, COMMON_HEADER_NAMES, Method, RequestDraft, format_body, format_duration,
+    format_size,
 };
 
 use super::model::{ClientModel, RequestState};
@@ -114,22 +115,27 @@ impl ClientView {
         }
     }
 
+    /// The current editor contents.
+    fn snapshot(&self, cx: &Context<Self>) -> RequestDraft {
+        RequestDraft {
+            method: self.method,
+            url: self.url.read(cx).value().to_string(),
+            params: self.params.read(cx).rows(cx),
+            headers: self.headers.read(cx).rows(cx),
+            auth: self.auth.read(cx).draft(cx),
+            body: self.body.read(cx).value().to_string(),
+        }
+    }
+
     fn send(&mut self, cx: &mut Context<Self>) {
-        let url = self.url.read(cx).value().trim().to_string();
-        if url.is_empty() {
+        let draft = self.snapshot(cx);
+        if draft.url.trim().is_empty() {
             self.model
                 .update(cx, |model, cx| model.fail("Enter a URL first.".into(), cx));
             return;
         }
 
-        let request = ApiRequest::build(
-            self.method,
-            &url,
-            self.params.read(cx).pairs(cx),
-            self.headers.read(cx).pairs(cx),
-            &self.auth.read(cx).auth(cx),
-            self.body.read(cx).value().to_string(),
-        );
+        let request = draft.build();
         self.model.update(cx, |model, cx| model.send(request, cx));
     }
 }

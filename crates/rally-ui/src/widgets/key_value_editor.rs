@@ -7,6 +7,8 @@ use gpui_kit::{
     div, point, prelude::*, px,
 };
 
+use rally_core::KeyValueRow;
+
 const MAX_SUGGESTIONS: usize = 6;
 const ROW_HEIGHT: f32 = 36.;
 const CHECK_COL: f32 = 40.;
@@ -53,24 +55,28 @@ impl KeyValueEditor {
         this
     }
 
-    /// Enabled rows with a non-empty key.
-    pub fn pairs(&self, cx: &gpui_kit::App) -> Vec<(String, String)> {
+    /// The table contents, skipping rows that are completely empty.
+    pub fn rows(&self, cx: &gpui_kit::App) -> Vec<KeyValueRow> {
         self.rows
             .iter()
-            .filter(|row| row.enabled)
-            .map(|row| {
-                (
-                    row.key.read(cx).value().trim().to_string(),
-                    row.value.read(cx).value().trim().to_string(),
-                )
+            .map(|row| KeyValueRow {
+                enabled: row.enabled,
+                key: row.key.read(cx).value().to_string(),
+                value: row.value.read(cx).value().to_string(),
+                description: row.description.read(cx).value().to_string(),
             })
-            .filter(|(key, _)| !key.is_empty())
+            .filter(|row| {
+                !(row.key.is_empty() && row.value.is_empty() && row.description.is_empty())
+            })
             .collect()
     }
 
     /// Number of rows that will be sent.
     pub fn count(&self, cx: &gpui_kit::App) -> usize {
-        self.pairs(cx).len()
+        self.rows(cx)
+            .iter()
+            .filter(|row| row.enabled && !row.key.trim().is_empty())
+            .count()
     }
 
     fn push_row(&mut self, window: &mut Window, cx: &mut Context<Self>) {
