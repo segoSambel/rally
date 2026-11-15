@@ -43,7 +43,7 @@ impl BodyEditor {
                 .soft_wrap(true)
                 .placeholder("Request body")
         });
-        let form = cx.new(|cx| KeyValueEditor::new("Field", &[], window, cx));
+        let form = cx.new(|cx| KeyValueEditor::new("Field", &[], None, window, cx));
 
         let subscriptions = vec![cx.subscribe_in(&kind_select, window, Self::on_kind_event)];
         Self {

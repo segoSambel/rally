@@ -14,6 +14,16 @@ const ROW_HEIGHT: f32 = 36.;
 const CHECK_COL: f32 = 40.;
 const REMOVE_COL: f32 = 36.;
 
+/// Which field of a row a suggestion dropdown belongs to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Field {
+    Key,
+    Value,
+}
+
+/// Looks up suggested values for a key.
+pub type ValueSuggestions = fn(&str) -> &'static [&'static str];
+
 struct HeaderRow {
     id: usize,
     enabled: bool,
@@ -29,10 +39,12 @@ pub struct KeyValueEditor {
     key_placeholder: &'static str,
     /// Key names offered by the autocomplete dropdown; empty disables it.
     suggestions: &'static [&'static str],
+    /// Values offered for a key's value field; `None` disables it.
+    value_suggestions: Option<ValueSuggestions>,
     rows: Vec<HeaderRow>,
     next_id: usize,
-    /// Row whose key field is showing suggestions.
-    active: Option<usize>,
+    /// Field currently showing suggestions.
+    active: Option<(usize, Field)>,
     hovering_suggestions: bool,
 }
 
@@ -40,12 +52,14 @@ impl KeyValueEditor {
     pub fn new(
         key_placeholder: &'static str,
         suggestions: &'static [&'static str],
+        value_suggestions: Option<ValueSuggestions>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut this = Self {
             key_placeholder,
             suggestions,
+            value_suggestions,
             rows: Vec::new(),
             next_id: 0,
             active: None,
@@ -122,11 +136,11 @@ impl KeyValueEditor {
             cx.subscribe_in(&key, window, move |this, _, event, window, cx| {
                 this.on_key_event(id, event, window, cx)
             }),
-            cx.subscribe_in(&value, window, |this, _, event, window, cx| {
-                this.on_value_event(event, window, cx)
+            cx.subscribe_in(&value, window, move |this, _, event, window, cx| {
+                this.on_value_event(id, event, window, cx)
             }),
             cx.subscribe_in(&description, window, |this, _, event, window, cx| {
-                this.on_value_event(event, window, cx)
+                this.on_description_event(event, window, cx)
             }),
         ];
         self.rows.push(HeaderRow {
@@ -155,18 +169,37 @@ impl KeyValueEditor {
         self.rows.iter().find(|row| row.id == id)
     }
 
-    fn suggestions(&self, id: usize, cx: &gpui_kit::App) -> Vec<&'static str> {
-        if self.active != Some(id) {
+    fn suggestions(&self, id: usize, field: Field, cx: &gpui_kit::App) -> Vec<&'static str> {
+        if self.active != Some((id, field)) {
             return Vec::new();
         }
         let Some(row) = self.row(id) else {
             return Vec::new();
         };
-        let typed = row.key.read(cx).value().trim().to_lowercase();
-        if typed.is_empty() {
-            return Vec::new();
-        }
-        self.suggestions
+
+        let (candidates, typed): (&[&'static str], String) = match field {
+            Field::Key => {
+                let typed = row.key.read(cx).value().trim().to_lowercase();
+                if typed.is_empty() {
+                    return Vec::new();
+                }
+                (self.suggestions, typed)
+            }
+            Field::Value => {
+                let Some(lookup) = self.value_suggestions else {
+                    return Vec::new();
+                };
+                // An empty value lists every suggestion; the text is not trimmed so that
+                // an accepted "Bearer " does not match itself again.
+                let key = row.key.read(cx).value();
+                (
+                    lookup(key.trim()),
+                    row.value.read(cx).value().to_lowercase(),
+                )
+            }
+        };
+
+        candidates
             .iter()
             .copied()
             .filter(|name| {
@@ -180,17 +213,32 @@ impl KeyValueEditor {
     fn accept(
         &mut self,
         id: usize,
+        field: Field,
         name: &'static str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(row) = self.row(id) else { return };
         let (key, value) = (row.key.clone(), row.value.clone());
-        key.update(cx, |state, cx| state.set_value(name, window, cx));
-        value.update(cx, |state, cx| state.focus(window, cx));
+        match field {
+            Field::Key => {
+                key.update(cx, |state, cx| state.set_value(name, window, cx));
+                // Focusing the value field opens its own suggestions.
+                value.update(cx, |state, cx| state.focus(window, cx));
+            }
+            Field::Value => value.update(cx, |state, cx| state.set_value(name, window, cx)),
+        }
         self.active = None;
         self.hovering_suggestions = false;
         cx.notify();
+    }
+
+    /// Closes the dropdown on blur, unless the pointer is over it (a click on a suggestion
+    /// blurs the field first and must still land).
+    fn close_on_blur(&mut self, id: usize, field: Field) {
+        if !self.hovering_suggestions && self.active == Some((id, field)) {
+            self.active = None;
+        }
     }
 
     fn on_key_event(
@@ -201,19 +249,14 @@ impl KeyValueEditor {
         cx: &mut Context<Self>,
     ) {
         match event {
-            InputEvent::Focus => self.active = Some(id),
-            InputEvent::Blur => {
-                // A click on a suggestion blurs the field first; keep the list alive for it.
-                if !self.hovering_suggestions && self.active == Some(id) {
-                    self.active = None;
-                }
-            }
+            InputEvent::Focus => self.active = Some((id, Field::Key)),
+            InputEvent::Blur => self.close_on_blur(id, Field::Key),
             InputEvent::Change => {
-                self.active = Some(id);
+                self.active = Some((id, Field::Key));
                 self.ensure_trailing_row(window, cx);
             }
-            InputEvent::PressEnter { .. } => match self.suggestions(id, cx).first() {
-                Some(name) => return self.accept(id, name, window, cx),
+            InputEvent::PressEnter { .. } => match self.suggestions(id, Field::Key, cx).first() {
+                Some(name) => return self.accept(id, Field::Key, name, window, cx),
                 None => {
                     if let Some(row) = self.row(id) {
                         let value = row.value.clone();
@@ -226,7 +269,39 @@ impl KeyValueEditor {
         cx.notify();
     }
 
-    fn on_value_event(&mut self, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_value_event(
+        &mut self,
+        id: usize,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            InputEvent::Focus => self.active = Some((id, Field::Value)),
+            InputEvent::Blur => self.close_on_blur(id, Field::Value),
+            InputEvent::Change => {
+                self.active = Some((id, Field::Value));
+                self.ensure_trailing_row(window, cx);
+            }
+            InputEvent::PressEnter { .. } => {
+                // Enter on an empty value must not pick a suggestion by accident.
+                let typed = self
+                    .row(id)
+                    .is_some_and(|row| !row.value.read(cx).value().is_empty());
+                if typed && let Some(name) = self.suggestions(id, Field::Value, cx).first() {
+                    return self.accept(id, Field::Value, name, window, cx);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn on_description_event(
+        &mut self,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match event {
             InputEvent::Focus => self.active = None,
             InputEvent::Change => self.ensure_trailing_row(window, cx),
@@ -237,7 +312,7 @@ impl KeyValueEditor {
 
     fn remove(&mut self, id: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.rows.retain(|row| row.id != id);
-        if self.active == Some(id) {
+        if self.active.is_some_and(|(row, _)| row == id) {
             self.active = None;
         }
         self.ensure_trailing_row(window, cx);
@@ -249,10 +324,15 @@ impl KeyValueEditor {
     fn render_suggestions(
         &self,
         id: usize,
+        field: Field,
         suggestions: Vec<&'static str>,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let theme = cx.theme();
+        let width = match field {
+            Field::Key => 240.,
+            Field::Value => 300.,
+        };
 
         deferred(
             anchored()
@@ -261,9 +341,9 @@ impl KeyValueEditor {
                 .snap_to_window()
                 .child(
                     div()
-                        .id(("suggestions", id))
+                        .id(("suggestions", id * 2 + field as usize))
                         .v_flex()
-                        .w(px(240.))
+                        .w(px(width))
                         .py_1()
                         .rounded_md()
                         .border_1()
@@ -285,7 +365,7 @@ impl KeyValueEditor {
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(move |this, _, window, cx| {
-                                        this.accept(id, name, window, cx)
+                                        this.accept(id, field, name, window, cx)
                                     }),
                                 )
                                 .child(SharedString::from(name))
@@ -297,7 +377,8 @@ impl KeyValueEditor {
 
     fn render_row(&self, row: &HeaderRow, is_last: bool, cx: &Context<Self>) -> impl IntoElement {
         let id = row.id;
-        let suggestions = self.suggestions(id, cx);
+        let key_suggestions = self.suggestions(id, Field::Key, cx);
+        let value_suggestions = self.suggestions(id, Field::Value, cx);
         let border = cx.theme().border;
 
         let cell = |input: &Entity<InputState>| {
@@ -336,11 +417,15 @@ impl KeyValueEditor {
                     }),
             )
             .child(divider())
-            .child(cell(&row.key).when(!suggestions.is_empty(), |this| {
-                this.child(self.render_suggestions(id, suggestions, cx))
+            .child(cell(&row.key).when(!key_suggestions.is_empty(), |this| {
+                this.child(self.render_suggestions(id, Field::Key, key_suggestions, cx))
             }))
             .child(divider())
-            .child(cell(&row.value))
+            .child(
+                cell(&row.value).when(!value_suggestions.is_empty(), |this| {
+                    this.child(self.render_suggestions(id, Field::Value, value_suggestions, cx))
+                }),
+            )
             .child(divider())
             .child(cell(&row.description))
             .child(divider())

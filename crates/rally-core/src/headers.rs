@@ -26,3 +26,49 @@ pub const COMMON_HEADER_NAMES: &[&str] = &[
     "X-Forwarded-For",
     "X-Requested-With",
 ];
+
+/// Values commonly used with a header, for the autocomplete dropdown. Header names are
+/// matched case-insensitively; unknown headers have no suggestions.
+pub fn common_header_values(name: &str) -> &'static [&'static str] {
+    match name.to_ascii_lowercase().as_str() {
+        "accept" => &[
+            "application/json",
+            "application/xml",
+            "text/html",
+            "text/plain",
+            "text/csv",
+            "*/*",
+        ],
+        "accept-charset" => &["utf-8"],
+        "accept-encoding" => &["gzip", "deflate", "br", "gzip, deflate, br", "identity"],
+        "accept-language" => &["en-US", "en", "en-US,en;q=0.9"],
+        "authorization" => &["Bearer ", "Basic ", "Digest "],
+        "cache-control" => &[
+            "no-cache",
+            "no-store",
+            "max-age=0",
+            "max-age=3600",
+            "public",
+            "private",
+            "must-revalidate",
+        ],
+        "connection" => &["keep-alive", "close"],
+        "content-encoding" => &["gzip", "deflate", "br"],
+        "content-type" => &[
+            "application/json",
+            "application/json; charset=utf-8",
+            "application/x-www-form-urlencoded",
+            "multipart/form-data",
+            "application/xml",
+            "text/plain",
+            "text/html",
+            "application/octet-stream",
+        ],
+        "dnt" => &["1", "0"],
+        "pragma" => &["no-cache"],
+        "range" => &["bytes=0-"],
+        "te" => &["trailers"],
+        "x-requested-with" => &["XMLHttpRequest"],
+        _ => &[],
+    }
+}

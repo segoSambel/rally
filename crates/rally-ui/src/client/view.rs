@@ -11,8 +11,8 @@ use gpui_kit::{
 };
 
 use rally_core::{
-    ApiResponse, BodyKind, COMMON_HEADER_NAMES, Method, RequestDraft, format_body, format_duration,
-    format_size,
+    ApiResponse, BodyKind, COMMON_HEADER_NAMES, Method, RequestDraft, common_header_values,
+    format_body, format_duration, format_size,
 };
 
 use super::model::{ClientModel, RequestCompleted, RequestState};
@@ -49,9 +49,17 @@ impl ClientView {
         let method_select =
             cx.new(|cx| SelectState::new(methods, Some(IndexPath::default()), window, cx));
         let url = cx.new(|cx| InputState::new(window, cx).placeholder("https://api.example.com"));
-        let params = cx.new(|cx| KeyValueEditor::new("Parameter", &[], window, cx));
+        let params = cx.new(|cx| KeyValueEditor::new("Parameter", &[], None, window, cx));
         let auth = cx.new(|cx| AuthEditor::new(window, cx));
-        let headers = cx.new(|cx| KeyValueEditor::new("Header", COMMON_HEADER_NAMES, window, cx));
+        let headers = cx.new(|cx| {
+            KeyValueEditor::new(
+                "Header",
+                COMMON_HEADER_NAMES,
+                Some(common_header_values),
+                window,
+                cx,
+            )
+        });
         let body = cx.new(|cx| BodyEditor::new(window, cx));
         let response_body = cx.new(|cx| {
             EditorState::new(window, cx)
