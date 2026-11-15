@@ -7,7 +7,7 @@ use gpui_kit::{
     div, point, prelude::*, px,
 };
 
-const COMMON_HEADERS: &[&str] = &[
+pub const COMMON_HEADERS: &[&str] = &[
     "Accept",
     "Accept-Charset",
     "Accept-Encoding",
@@ -44,8 +44,11 @@ struct HeaderRow {
     _subscriptions: Vec<Subscription>,
 }
 
-/// Key/value table of request headers. Always ends with one empty row.
-pub struct HeadersEditor {
+/// Key/value table (headers, query params). Always ends with one empty row.
+pub struct KeyValueEditor {
+    key_placeholder: &'static str,
+    /// Key names offered by the autocomplete dropdown; empty disables it.
+    suggestions: &'static [&'static str],
     rows: Vec<HeaderRow>,
     next_id: usize,
     /// Row whose key field is showing suggestions.
@@ -53,9 +56,16 @@ pub struct HeadersEditor {
     hovering_suggestions: bool,
 }
 
-impl HeadersEditor {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+impl KeyValueEditor {
+    pub fn new(
+        key_placeholder: &'static str,
+        suggestions: &'static [&'static str],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let mut this = Self {
+            key_placeholder,
+            suggestions,
             rows: Vec::new(),
             next_id: 0,
             active: None,
@@ -66,7 +76,7 @@ impl HeadersEditor {
     }
 
     /// Enabled rows with a non-empty key.
-    pub fn headers(&self, cx: &gpui_kit::App) -> Vec<(String, String)> {
+    pub fn pairs(&self, cx: &gpui_kit::App) -> Vec<(String, String)> {
         self.rows
             .iter()
             .filter(|row| row.enabled)
@@ -84,7 +94,7 @@ impl HeadersEditor {
         let id = self.next_id;
         self.next_id += 1;
 
-        let key = cx.new(|cx| InputState::new(window, cx).placeholder("Header"));
+        let key = cx.new(|cx| InputState::new(window, cx).placeholder(self.key_placeholder));
         let value = cx.new(|cx| InputState::new(window, cx).placeholder("Value"));
         let subscriptions = vec![
             cx.subscribe_in(&key, window, move |this, _, event, window, cx| {
@@ -128,7 +138,7 @@ impl HeadersEditor {
         if typed.is_empty() {
             return Vec::new();
         }
-        COMMON_HEADERS
+        self.suggestions
             .iter()
             .copied()
             .filter(|name| {
@@ -207,7 +217,7 @@ impl HeadersEditor {
     }
 }
 
-impl HeadersEditor {
+impl KeyValueEditor {
     fn render_suggestions(
         &self,
         id: usize,
@@ -304,14 +314,14 @@ impl HeadersEditor {
     }
 }
 
-impl Render for HeadersEditor {
+impl Render for KeyValueEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let last = self.rows.len().saturating_sub(1);
 
         let muted = cx.theme().muted_foreground;
 
         div()
-            .id("headers-editor")
+            .id("key-value-editor")
             .size_full()
             .v_flex()
             .gap_2()

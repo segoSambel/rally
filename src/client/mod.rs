@@ -1,7 +1,8 @@
+mod auth_editor;
 mod client_model;
 mod client_view;
-mod headers_editor;
 mod http;
+mod key_value_editor;
 
 pub use client_model::ClientModel;
 pub use client_view::ClientView;
