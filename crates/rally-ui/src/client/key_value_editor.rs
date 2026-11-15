@@ -7,33 +7,6 @@ use gpui_kit::{
     div, point, prelude::*, px,
 };
 
-pub const COMMON_HEADERS: &[&str] = &[
-    "Accept",
-    "Accept-Charset",
-    "Accept-Encoding",
-    "Accept-Language",
-    "Authorization",
-    "Cache-Control",
-    "Connection",
-    "Content-Encoding",
-    "Content-Length",
-    "Content-Type",
-    "Cookie",
-    "DNT",
-    "Host",
-    "If-Match",
-    "If-Modified-Since",
-    "If-None-Match",
-    "Origin",
-    "Pragma",
-    "Range",
-    "Referer",
-    "TE",
-    "User-Agent",
-    "X-Api-Key",
-    "X-Forwarded-For",
-    "X-Requested-With",
-];
 const MAX_SUGGESTIONS: usize = 6;
 const ROW_HEIGHT: f32 = 36.;
 const CHECK_COL: f32 = 40.;

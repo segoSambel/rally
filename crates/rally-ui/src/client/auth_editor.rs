@@ -3,7 +3,7 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::{ActiveTheme, IndexPath, StyledExt};
 use gpui_kit::{Context, Entity, Subscription, Window, div, prelude::*, px};
 
-use rally_core::base64_encode;
+use rally_core::{ApiKeyLocation, Auth};
 
 const KINDS: [&str; 4] = ["No Auth", "Bearer Token", "Basic Auth", "API Key"];
 const LOCATIONS: [&str; 2] = ["Header", "Query Params"];
@@ -14,13 +14,6 @@ enum AuthKind {
     Bearer,
     Basic,
     ApiKey,
-}
-
-/// What the chosen auth scheme adds to a request.
-#[derive(Default)]
-pub struct AuthParts {
-    pub headers: Vec<(String, String)>,
-    pub query: Vec<(String, String)>,
 }
 
 pub struct AuthEditor {
@@ -102,43 +95,29 @@ impl AuthEditor {
         }
     }
 
-    /// Headers or query params the selected scheme contributes. Empty fields add nothing.
-    pub fn parts(&self, cx: &gpui_kit::App) -> AuthParts {
+    /// The scheme and values currently entered.
+    pub fn auth(&self, cx: &gpui_kit::App) -> Auth {
         let read = |input: &Entity<InputState>| input.read(cx).value().trim().to_string();
-        let mut parts = AuthParts::default();
 
         match self.kind {
-            AuthKind::None => {}
-            AuthKind::Bearer => {
-                let token = read(&self.token);
-                if !token.is_empty() {
-                    parts
-                        .headers
-                        .push(("Authorization".into(), format!("Bearer {token}")));
-                }
-            }
-            AuthKind::Basic => {
-                let (user, pass) = (read(&self.username), self.password.read(cx).value());
-                if !user.is_empty() || !pass.is_empty() {
-                    let encoded = base64_encode(format!("{user}:{pass}").as_bytes());
-                    parts
-                        .headers
-                        .push(("Authorization".into(), format!("Basic {encoded}")));
-                }
-            }
-            AuthKind::ApiKey => {
-                let (name, value) = (read(&self.key_name), read(&self.key_value));
-                if !name.is_empty() {
-                    let target = if self.in_query {
-                        &mut parts.query
-                    } else {
-                        &mut parts.headers
-                    };
-                    target.push((name, value));
-                }
-            }
+            AuthKind::None => Auth::None,
+            AuthKind::Bearer => Auth::Bearer {
+                token: read(&self.token),
+            },
+            AuthKind::Basic => Auth::Basic {
+                username: read(&self.username),
+                password: self.password.read(cx).value().to_string(),
+            },
+            AuthKind::ApiKey => Auth::ApiKey {
+                name: read(&self.key_name),
+                value: read(&self.key_value),
+                location: if self.in_query {
+                    ApiKeyLocation::Query
+                } else {
+                    ApiKeyLocation::Header
+                },
+            },
         }
-        parts
     }
 }
 

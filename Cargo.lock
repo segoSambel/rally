@@ -4870,6 +4870,7 @@ dependencies = [
 name = "rally-core"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "ureq",
 ]
 
@@ -4880,7 +4881,6 @@ dependencies = [
  "gpui-kit",
  "rally-core",
  "rust-embed",
- "serde_json",
 ]
 
 [[package]]
