@@ -11,7 +11,7 @@ use gpui_kit::component::{
 use gpui_kit::{Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
 
 use rally_core::{
-    ApiResponse, COMMON_HEADER_NAMES, Method, RequestDraft, format_body, format_duration,
+    ApiResponse, BodyKind, COMMON_HEADER_NAMES, Method, RequestDraft, format_body, format_duration,
     format_size,
 };
 
@@ -183,7 +183,9 @@ impl ClientView {
             params: self.params.read(cx).rows(cx),
             headers: self.headers.read(cx).rows(cx),
             auth: self.auth.read(cx).draft(cx),
+            body_kind: BodyKind::Text,
             body: self.body.read(cx).value().to_string(),
+            form: Vec::new(),
         }
     }
 

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::{ApiKeyLocation, Auth};
 use crate::request::{ApiRequest, Method};
+use crate::url::form_encode;
 
 /// One row of a key/value table (headers or query params).
 #[derive(Clone, Serialize, Deserialize)]
@@ -72,6 +73,18 @@ impl AuthDraft {
     }
 }
 
+/// How the request body is entered and encoded.
+///
+/// `Text` is the default so history saved before body types existed keeps its body.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BodyKind {
+    None,
+    Json,
+    #[default]
+    Text,
+    Form,
+}
+
 /// The full editor state of a request: what the user typed, not what is sent.
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -81,19 +94,38 @@ pub struct RequestDraft {
     pub params: Vec<KeyValueRow>,
     pub headers: Vec<KeyValueRow>,
     pub auth: AuthDraft,
+    pub body_kind: BodyKind,
+    /// Raw text for the `Json` and `Text` kinds.
     pub body: String,
+    /// Rows for the `Form` kind.
+    pub form: Vec<KeyValueRow>,
 }
 
 impl RequestDraft {
     /// The request to send: enabled rows with a key, trimmed, plus the auth scheme.
+    ///
+    /// The body kind sets a default `Content-Type` when there is a body; a header the user
+    /// set explicitly wins.
     pub fn build(&self) -> ApiRequest {
+        let (body, content_type) = match self.body_kind {
+            BodyKind::None => (String::new(), None),
+            BodyKind::Json => (self.body.clone(), Some("application/json")),
+            BodyKind::Text => (self.body.clone(), Some("text/plain")),
+            BodyKind::Form => (
+                form_encode(&enabled_pairs(&self.form)),
+                Some("application/x-www-form-urlencoded"),
+            ),
+        };
+        let content_type = content_type.filter(|_| !body.is_empty());
+
         ApiRequest::build(
             self.method,
             self.url.trim(),
             enabled_pairs(&self.params),
             enabled_pairs(&self.headers),
             &self.auth.to_auth(),
-            self.body.clone(),
+            body,
+            content_type,
         )
     }
 }

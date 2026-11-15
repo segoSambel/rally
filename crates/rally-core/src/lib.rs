@@ -9,7 +9,7 @@ mod transport;
 mod url;
 
 pub use auth::{ApiKeyLocation, Auth};
-pub use draft::{AuthDraft, AuthKind, KeyValueRow, RequestDraft};
+pub use draft::{AuthDraft, AuthKind, BodyKind, KeyValueRow, RequestDraft};
 pub use format::{format_ago, format_body, format_duration, format_size};
 pub use headers::COMMON_HEADER_NAMES;
 pub use history::{History, HistoryEntry, default_history_path, now_unix};

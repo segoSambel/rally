@@ -7,11 +7,7 @@ pub(crate) fn with_query(url: &str, params: &[(String, String)]) -> String {
         Some((base, fragment)) => (base, Some(fragment)),
         None => (url, None),
     };
-    let query = params
-        .iter()
-        .map(|(name, value)| format!("{}={}", percent_encode(name), percent_encode(value)))
-        .collect::<Vec<_>>()
-        .join("&");
+    let query = form_encode(params);
     let separator = match base.find('?') {
         None => "?",
         Some(_) if base.ends_with('?') || base.ends_with('&') => "",
@@ -19,6 +15,15 @@ pub(crate) fn with_query(url: &str, params: &[(String, String)]) -> String {
     };
     let fragment = fragment.map(|f| format!("#{f}")).unwrap_or_default();
     format!("{base}{separator}{query}{fragment}")
+}
+
+/// `name=value` pairs joined with `&`, percent-encoded, for form bodies and query strings.
+pub(crate) fn form_encode(pairs: &[(String, String)]) -> String {
+    pairs
+        .iter()
+        .map(|(name, value)| format!("{}={}", percent_encode(name), percent_encode(value)))
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 fn percent_encode(text: &str) -> String {
