@@ -4,9 +4,11 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{
-    ActiveTheme, Icon, IconName, IndexPath, Sizable, StyledExt, Theme, ThemeMode,
+    ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, StyledExt, Theme, ThemeMode,
 };
-use gpui_kit::{Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
+use gpui_kit::{
+    ClipboardItem, Context, Entity, SharedString, Subscription, Window, div, prelude::*, px,
+};
 
 use rally_core::{
     ApiResponse, BodyKind, COMMON_HEADER_NAMES, Method, RequestDraft, format_body, format_duration,
@@ -24,6 +26,8 @@ pub struct ClientView {
     history: Entity<HistoryModel>,
     history_panel: Entity<HistoryPanel>,
     sidebar_open: bool,
+    /// Briefly true after copying, to show a confirmation icon.
+    copied: bool,
     method: Method,
     method_select: Entity<SelectState<MethodSelect>>,
     url: Entity<InputState>,
@@ -71,6 +75,7 @@ impl ClientView {
             history,
             history_panel,
             sidebar_open: true,
+            copied: false,
             method: Method::Get,
             method_select,
             url,
@@ -153,6 +158,39 @@ impl ClientView {
         self.body
             .update(cx, |editor, cx| editor.set_draft(&body, window, cx));
         cx.notify();
+    }
+
+    /// Copies what the active response tab shows: the body, or the headers as `Name: value`.
+    fn copy_response(&mut self, cx: &mut Context<Self>) {
+        let model = self.model.read(cx);
+        let RequestState::Done(response) = model.state() else {
+            return;
+        };
+        let text = if self.response_tab == 0 {
+            self.response_body.read(cx).value().to_string()
+        } else {
+            response
+                .headers
+                .iter()
+                .map(|(name, value)| format!("{name}: {value}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        self.copied = true;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(1500))
+                .await;
+            this.update(cx, |this, cx| {
+                this.copied = false;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn on_method_event(
@@ -403,6 +441,23 @@ impl ClientView {
                     div()
                         .text_color(theme.muted_foreground)
                         .child(format_size(response.body.len())),
+                )
+                .child(
+                    Button::new("copy-response")
+                        .ghost()
+                        .xsmall()
+                        .icon(if self.copied {
+                            IconName::Check
+                        } else {
+                            IconName::Copy
+                        })
+                        .tooltip(if self.response_tab == 0 {
+                            "Copy body"
+                        } else {
+                            "Copy headers"
+                        })
+                        .disabled(self.response_tab == 0 && response.body.is_empty())
+                        .on_click(cx.listener(|this, _, _, cx| this.copy_response(cx))),
                 )
             }
             _ => row,
