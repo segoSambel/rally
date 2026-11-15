@@ -1,0 +1,10 @@
+[package]
+name = "rally"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gpui-kit.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
+rust-embed.workspace = true
