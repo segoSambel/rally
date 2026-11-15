@@ -4,7 +4,7 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, StyledExt, Theme, ThemeMode,
+    ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, StyledExt,
 };
 use gpui_kit::{
     ClipboardItem, Context, Entity, SharedString, Subscription, Window, div, prelude::*, px,
@@ -22,20 +22,22 @@ use crate::widgets::{
 };
 
 pub struct ClientView {
-    model: Entity<ClientModel>,
-    history: Entity<HistoryModel>,
+    pub(super) model: Entity<ClientModel>,
+    pub(super) history: Entity<HistoryModel>,
     history_panel: Entity<HistoryPanel>,
-    sidebar_open: bool,
+    pub(super) sidebar_open: bool,
     /// Briefly true after copying, to show a confirmation icon.
     copied: bool,
-    method: Method,
+    pub(super) method: Method,
     method_select: Entity<SelectState<MethodSelect>>,
-    url: Entity<InputState>,
+    pub(super) url: Entity<InputState>,
     params: Entity<KeyValueEditor>,
     auth: Entity<AuthEditor>,
     headers: Entity<KeyValueEditor>,
     body: Entity<BodyEditor>,
     response_body: Entity<EditorState>,
+    /// Whether the last response body was JSON, for the format pill.
+    response_is_json: bool,
     request_tab: usize,
     response_tab: usize,
     _subscriptions: Vec<Subscription>,
@@ -92,6 +94,7 @@ impl ClientView {
             headers,
             body,
             response_body,
+            response_is_json: false,
             request_tab: 0,
             response_tab: 0,
             _subscriptions: subscriptions,
@@ -108,6 +111,7 @@ impl ClientView {
             RequestState::Done(response) => format_body(&response.body),
             _ => (String::new(), false),
         };
+        self.response_is_json = is_json;
         self.response_body.update(cx, |state, cx| {
             state.set_highlighter(if is_json { "json" } else { "text" }, cx);
             state.set_value(text, window, cx);
@@ -201,6 +205,15 @@ impl ClientView {
         .detach();
     }
 
+    /// Clears every editor, like opening a blank request.
+    pub(super) fn new_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let blank = RequestDraft {
+            body_kind: BodyKind::None,
+            ..Default::default()
+        };
+        self.restore(&blank, window, cx);
+    }
+
     fn on_method_event(
         &mut self,
         _select: &Entity<SelectState<MethodSelect>>,
@@ -264,23 +277,9 @@ impl ClientView {
             .gap_2()
             .px_4()
             .py_3()
-            .bg(cx.theme().tab_bar)
+            .bg(cx.theme().background)
             .border_b_1()
             .border_color(cx.theme().border)
-            .child(
-                Button::new("sidebar-toggle")
-                    .ghost()
-                    .icon(if self.sidebar_open {
-                        IconName::PanelLeftClose
-                    } else {
-                        IconName::PanelLeftOpen
-                    })
-                    .tooltip("Toggle history")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.sidebar_open = !this.sidebar_open;
-                        cx.notify();
-                    })),
-            )
             .child(
                 // One bordered field holding the method picker and the URL, like Bruno.
                 div()
@@ -309,27 +308,10 @@ impl ClientView {
             .child(
                 Button::new("send")
                     .primary()
+                    .large()
                     .label("Send")
                     .loading(sending)
                     .on_click(cx.listener(|this, _, _, cx| this.send(cx))),
-            )
-            .child(
-                Button::new("theme-toggle")
-                    .ghost()
-                    .icon(if cx.theme().is_dark() {
-                        IconName::Sun
-                    } else {
-                        IconName::Moon
-                    })
-                    .tooltip("Toggle light/dark theme")
-                    .on_click(|_, window, cx| {
-                        let mode = if cx.theme().is_dark() {
-                            ThemeMode::Light
-                        } else {
-                            ThemeMode::Dark
-                        };
-                        Theme::change(mode, Some(window), cx);
-                    }),
             )
     }
 
@@ -414,8 +396,8 @@ impl ClientView {
                         this.response_tab = *index;
                         cx.notify();
                     }))
-                    .child(Tab::new().label("Body"))
-                    .child(Tab::new().label(format!("Headers ({header_count})"))),
+                    .child(Tab::new().label("Response"))
+                    .child(self.tab_with_count("Headers", header_count, cx)),
             )
             .child(self.render_response_content(cx))
     }
@@ -435,6 +417,21 @@ impl ClientView {
                 let color = status_color(theme, response.status);
                 let status = format!("{} {}", response.status, response.reason);
                 row.child(
+                    div()
+                        .px_2()
+                        .py_0p5()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(theme.border)
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(if self.response_is_json {
+                            "JSON"
+                        } else {
+                            "Text"
+                        }),
+                )
+                .child(
                     div()
                         .font_semibold()
                         .text_color(color)
@@ -568,35 +565,44 @@ impl Render for ClientView {
 
         div()
             .size_full()
-            .h_flex()
-            .items_stretch()
+            .v_flex()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .when(self.sidebar_open, |this| {
-                this.child(
-                    div()
-                        .w(px(240.))
-                        .flex_shrink_0()
-                        .border_r_1()
-                        .border_color(border)
-                        .child(self.history_panel.clone()),
-                )
-            })
+            .text_sm()
             .child(
                 div()
+                    .h_flex()
+                    .items_stretch()
                     .flex_1()
-                    .min_w_0()
-                    .v_flex()
-                    .child(self.render_url_bar(cx))
+                    .min_h_0()
+                    .when(self.sidebar_open, |this| {
+                        this.child(
+                            div()
+                                .w(px(260.))
+                                .flex_shrink_0()
+                                .border_r_1()
+                                .border_color(border)
+                                .child(self.history_panel.clone()),
+                        )
+                    })
                     .child(
                         div()
-                            .h_flex()
-                            .items_stretch()
                             .flex_1()
-                            .min_h_0()
-                            .child(self.render_request_pane(cx))
-                            .child(self.render_response_pane(cx)),
+                            .min_w_0()
+                            .v_flex()
+                            .child(self.render_tab_strip(cx))
+                            .child(self.render_url_bar(cx))
+                            .child(
+                                div()
+                                    .h_flex()
+                                    .items_stretch()
+                                    .flex_1()
+                                    .min_h_0()
+                                    .child(self.render_request_pane(cx))
+                                    .child(self.render_response_pane(cx)),
+                            ),
                     ),
             )
+            .child(self.render_status_bar(cx))
     }
 }

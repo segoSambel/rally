@@ -1,3 +1,4 @@
+mod chrome;
 mod model;
 mod view;
 

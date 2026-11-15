@@ -13,19 +13,30 @@ pub struct OpenEntry(pub RequestDraft);
 /// Sidebar listing sent requests, newest first.
 pub struct HistoryPanel {
     model: Entity<HistoryModel>,
+    /// Entry last opened from the list; cleared when the history changes.
+    selected: Option<u64>,
 }
 
 impl EventEmitter<OpenEntry> for HistoryPanel {}
 
 impl HistoryPanel {
     pub fn new(model: Entity<HistoryModel>, cx: &mut Context<Self>) -> Self {
-        cx.observe(&model, |_, _, cx| cx.notify()).detach();
-        Self { model }
+        cx.observe(&model, |this, _, cx| {
+            this.selected = None;
+            cx.notify();
+        })
+        .detach();
+        Self {
+            model,
+            selected: None,
+        }
     }
 
     fn render_entry(&self, entry: &HistoryEntry, now: u64, cx: &Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let draft = entry.draft.clone();
+        let id = entry.id;
+        let is_selected = self.selected == Some(id);
         let url = entry.draft.url.trim();
         let url = url
             .strip_prefix("https://")
@@ -50,9 +61,20 @@ impl HistoryPanel {
             .gap_1()
             .px_3()
             .py_2()
+            .border_l_2()
+            .border_color(if is_selected {
+                theme.primary
+            } else {
+                gpui_kit::transparent_black()
+            })
+            .when(is_selected, |this| this.bg(theme.muted.opacity(0.5)))
             .cursor_pointer()
             .hover(|style| style.bg(theme.muted.opacity(0.4)))
-            .on_click(cx.listener(move |_, _, _, cx| cx.emit(OpenEntry(draft.clone()))))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.selected = Some(id);
+                cx.emit(OpenEntry(draft.clone()));
+                cx.notify();
+            }))
             .child(
                 div()
                     .h_flex()
@@ -101,6 +123,7 @@ impl Render for HistoryPanel {
         let (border, muted, chrome) = (theme.border, theme.muted_foreground, theme.tab_bar);
         let model = self.model.read(cx);
         let is_empty = model.entries().is_empty();
+        let count = model.entries().len();
         let now = now_unix();
 
         div()
@@ -115,7 +138,18 @@ impl Render for HistoryPanel {
                     .py_2()
                     .border_b_1()
                     .border_color(border)
-                    .child(div().text_sm().font_semibold().child("History"))
+                    .child(
+                        div()
+                            .h_flex()
+                            .gap_2()
+                            .child(div().text_sm().font_semibold().child("History"))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .child(SharedString::from(count.to_string())),
+                            ),
+                    )
                     .child(
                         Button::new("history-clear")
                             .ghost()
