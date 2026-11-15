@@ -4864,8 +4864,15 @@ name = "rally"
 version = "0.1.0"
 dependencies = [
  "gpui-kit",
+ "rally-core",
  "rust-embed",
  "serde_json",
+]
+
+[[package]]
+name = "rally-core"
+version = "0.1.0"
+dependencies = [
  "ureq",
 ]
 

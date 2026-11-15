@@ -1,0 +1,7 @@
+[package]
+name = "rally-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ureq.workspace = true

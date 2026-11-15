@@ -14,9 +14,10 @@ use gpui_kit::{
     px, rgb,
 };
 
+use rally_core::{ApiRequest, ApiResponse, Method, with_query};
+
 use super::auth_editor::AuthEditor;
 use super::client_model::{ClientModel, RequestState};
-use super::http::{ApiRequest, ApiResponse, Method, with_query};
 use super::key_value_editor::{COMMON_HEADERS, KeyValueEditor};
 
 type MethodSelect = Vec<MethodItem>;

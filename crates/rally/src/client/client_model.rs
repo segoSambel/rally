@@ -1,6 +1,6 @@
 use gpui_kit::Context;
 
-use super::http::{self, ApiRequest, ApiResponse};
+use rally_core::{ApiRequest, ApiResponse, send};
 
 pub enum RequestState {
     Idle,
@@ -45,7 +45,7 @@ impl ClientModel {
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { http::send(request) })
+                .spawn(async move { send(request) })
                 .await;
             this.update(cx, |this, cx| {
                 this.state = match result {

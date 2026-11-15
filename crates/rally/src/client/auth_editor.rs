@@ -3,7 +3,7 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::{ActiveTheme, IndexPath, StyledExt};
 use gpui_kit::{Context, Entity, Subscription, Window, div, prelude::*, px};
 
-use super::http::base64_encode;
+use rally_core::base64_encode;
 
 const KINDS: [&str; 4] = ["No Auth", "Bearer Token", "Basic Auth", "API Key"];
 const LOCATIONS: [&str; 2] = ["Header", "Query Params"];
