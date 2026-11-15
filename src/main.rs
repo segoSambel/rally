@@ -11,11 +11,13 @@ use gpui_kit::{App, Bounds, TitlebarOptions, WindowBounds, WindowOptions, prelud
 use crate::client::{ClientModel, ClientView};
 
 fn main() {
-    gpui_kit::application().run(|cx: &mut App| {
-        gpui_kit::init(cx);
-        open_main_window(cx);
-        cx.activate(true);
-    });
+    gpui_kit::application()
+        .with_assets(gpui_kit::assets::Assets)
+        .run(|cx: &mut App| {
+            gpui_kit::init(cx);
+            open_main_window(cx);
+            cx.activate(true);
+        });
 }
 
 fn open_main_window(cx: &mut App) {

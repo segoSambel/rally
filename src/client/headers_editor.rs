@@ -1,7 +1,7 @@
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::{ActiveTheme, StyledExt};
+use gpui_kit::component::{ActiveTheme, IconName, Sizable, StyledExt};
 use gpui_kit::{
     Anchor, Context, Entity, MouseButton, SharedString, Subscription, Window, anchored, deferred,
     div, point, prelude::*, px,
@@ -264,16 +264,18 @@ impl HeadersEditor {
         div()
             .h_flex()
             .gap_2()
-            .child(
-                Checkbox::new(("header-enabled", id))
-                    .checked(row.enabled)
-                    .on_click(cx.listener(move |this, checked: &bool, _, cx| {
-                        if let Some(row) = this.rows.iter_mut().find(|row| row.id == id) {
-                            row.enabled = *checked;
-                            cx.notify();
-                        }
-                    })),
-            )
+            .child(div().w(px(20.)).when(!is_last, |this| {
+                this.child(
+                    Checkbox::new(("header-enabled", id))
+                        .checked(row.enabled)
+                        .on_click(cx.listener(move |this, checked: &bool, _, cx| {
+                            if let Some(row) = this.rows.iter_mut().find(|row| row.id == id) {
+                                row.enabled = *checked;
+                                cx.notify();
+                            }
+                        })),
+                )
+            }))
             .child(
                 div()
                     .flex_1()
@@ -287,7 +289,8 @@ impl HeadersEditor {
                 this.child(
                     Button::new(("header-remove", id))
                         .ghost()
-                        .label("×")
+                        .xsmall()
+                        .icon(IconName::Close)
                         .on_click(
                             cx.listener(move |this, _, window, cx| this.remove(id, window, cx)),
                         ),
@@ -300,12 +303,25 @@ impl Render for HeadersEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let last = self.rows.len().saturating_sub(1);
 
+        let muted = cx.theme().muted_foreground;
+
         div()
             .id("headers-editor")
             .size_full()
             .v_flex()
             .gap_2()
             .overflow_y_scroll()
+            .child(
+                div()
+                    .h_flex()
+                    .gap_2()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(div().w(px(20.)))
+                    .child(div().flex_1().child("Key"))
+                    .child(div().flex_1().child("Value"))
+                    .child(div().w(px(32.))),
+            )
             .children(
                 self.rows
                     .iter()

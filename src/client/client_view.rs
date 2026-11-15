@@ -160,6 +160,7 @@ impl ClientView {
             .child(
                 TabBar::new("request-tabs")
                     .underline()
+                    .prefix(div().w(px(12.)))
                     .selected_index(self.request_tab)
                     .on_click(cx.listener(|this, index: &usize, _, cx| {
                         this.request_tab = *index;
@@ -189,6 +190,7 @@ impl ClientView {
                     .child(
                         TabBar::new("response-tabs")
                             .underline()
+                            .prefix(div().w(px(12.)))
                             .selected_index(self.response_tab)
                             .on_click(cx.listener(|this, index: &usize, _, cx| {
                                 this.response_tab = *index;
@@ -234,9 +236,12 @@ impl ClientView {
             RequestState::Failed(message) => container
                 .text_color(cx.theme().danger)
                 .child(SharedString::from(message.clone())),
-            RequestState::Done(_) if self.response_tab == 0 => {
-                container.child(Textarea::new(&self.response_body).readonly(true).h_full())
-            }
+            RequestState::Done(_) if self.response_tab == 0 => container.child(
+                Textarea::new(&self.response_body)
+                    .readonly(true)
+                    .bordered(false)
+                    .h_full(),
+            ),
             RequestState::Done(response) => container
                 .overflow_y_scroll()
                 .child(self.render_response_headers(response, cx)),
