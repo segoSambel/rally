@@ -1,47 +1,55 @@
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
-use gpui_kit::component::{ActiveTheme, Selectable, StyledExt};
-use gpui_kit::{Context, Entity, SharedString, Subscription, Window, div, prelude::*};
+use gpui_kit::component::select::{Select, SelectEvent, SelectState};
+use gpui_kit::component::tab::{Tab, TabBar};
+use gpui_kit::component::tag::Tag;
+use gpui_kit::component::{ActiveTheme, IndexPath, StyledExt};
+use gpui_kit::{Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
 
 use super::client_model::{ClientModel, RequestState};
 use super::http::{self, ApiRequest, ApiResponse, Method};
 
+type MethodSelect = Vec<&'static str>;
+
 pub struct ClientView {
     model: Entity<ClientModel>,
     method: Method,
+    method_select: Entity<SelectState<MethodSelect>>,
     url: Entity<InputState>,
     headers: Entity<TextareaState>,
     body: Entity<TextareaState>,
     response_body: Entity<TextareaState>,
+    request_tab: usize,
+    response_tab: usize,
     _subscriptions: Vec<Subscription>,
 }
 
 impl ClientView {
     pub fn new(model: Entity<ClientModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let methods: MethodSelect = Method::ALL.iter().map(|m| m.as_str()).collect();
+        let method_select =
+            cx.new(|cx| SelectState::new(methods, Some(IndexPath::default()), window, cx));
         let url = cx.new(|cx| InputState::new(window, cx).placeholder("https://api.example.com"));
-        let headers = cx.new(|cx| {
-            TextareaState::new(window, cx)
-                .rows(4)
-                .placeholder("Content-Type: application/json")
-        });
-        let body = cx.new(|cx| {
-            TextareaState::new(window, cx)
-                .rows(6)
-                .placeholder("Request body")
-        });
-        let response_body = cx.new(|cx| TextareaState::new(window, cx).rows(12));
+        let headers = cx
+            .new(|cx| TextareaState::new(window, cx).placeholder("Content-Type: application/json"));
+        let body = cx.new(|cx| TextareaState::new(window, cx).placeholder("Request body"));
+        let response_body = cx.new(|cx| TextareaState::new(window, cx));
 
         let subscriptions = vec![
             cx.observe_in(&model, window, Self::on_model_change),
             cx.subscribe_in(&url, window, Self::on_url_event),
+            cx.subscribe_in(&method_select, window, Self::on_method_event),
         ];
         Self {
             model,
             method: Method::Get,
+            method_select,
             url,
             headers,
             body,
             response_body,
+            request_tab: 0,
+            response_tab: 0,
             _subscriptions: subscriptions,
         }
     }
@@ -59,6 +67,22 @@ impl ClientView {
         self.response_body
             .update(cx, |state, cx| state.set_value(text, window, cx));
         cx.notify();
+    }
+
+    fn on_method_event(
+        &mut self,
+        _select: &Entity<SelectState<MethodSelect>>,
+        event: &SelectEvent<MethodSelect>,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let SelectEvent::Confirm(Some(name)) = event else {
+            return;
+        };
+        if let Some(method) = Method::ALL.into_iter().find(|m| m.as_str() == *name) {
+            self.method = method;
+            cx.notify();
+        }
     }
 
     fn on_url_event(
@@ -106,22 +130,17 @@ fn pretty_body(body: &str) -> String {
 }
 
 impl ClientView {
-    fn render_request_row(&self, cx: &Context<Self>) -> impl IntoElement {
+    fn render_url_bar(&self, cx: &Context<Self>) -> impl IntoElement {
         let sending = self.model.read(cx).is_sending();
 
         div()
             .h_flex()
             .gap_2()
-            .child(div().h_flex().gap_1().children(Method::ALL.map(|method| {
-                Button::new(method.as_str())
-                    .ghost()
-                    .label(method.as_str())
-                    .selected(self.method == method)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.method = method;
-                        cx.notify();
-                    }))
-            })))
+            .px_3()
+            .py_2()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(div().w(px(120.)).child(Select::new(&self.method_select)))
             .child(div().flex_1().child(Input::new(&self.url)))
             .child(
                 Button::new("send")
@@ -132,76 +151,134 @@ impl ClientView {
             )
     }
 
-    fn render_section(
-        &self,
-        title: &'static str,
-        content: impl IntoElement,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
+    fn render_request_pane(&self, cx: &Context<Self>) -> impl IntoElement {
+        let editor = match self.request_tab {
+            0 => Textarea::new(&self.headers),
+            _ => Textarea::new(&self.body),
+        };
+
         div()
             .v_flex()
-            .gap_1()
+            .flex_1()
+            .min_w_0()
+            .border_r_1()
+            .border_color(cx.theme().border)
             .child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(title),
+                TabBar::new("request-tabs")
+                    .underline()
+                    .selected_index(self.request_tab)
+                    .on_click(cx.listener(|this, index: &usize, _, cx| {
+                        this.request_tab = *index;
+                        cx.notify();
+                    }))
+                    .child(Tab::new().label("Headers"))
+                    .child(Tab::new().label("Body")),
             )
-            .child(content)
+            .child(div().flex_1().min_h_0().p_3().child(editor.h_full()))
     }
 
-    fn render_response(&self, cx: &Context<Self>) -> impl IntoElement {
+    fn render_response_pane(&self, cx: &Context<Self>) -> impl IntoElement {
         let model = self.model.read(cx);
-        let muted = cx.theme().muted_foreground;
+        let header_count = match model.state() {
+            RequestState::Done(response) => response.headers.len(),
+            _ => 0,
+        };
+
+        div()
+            .v_flex()
+            .flex_1()
+            .min_w_0()
+            .child(
+                div()
+                    .h_flex()
+                    .justify_between()
+                    .child(
+                        TabBar::new("response-tabs")
+                            .underline()
+                            .selected_index(self.response_tab)
+                            .on_click(cx.listener(|this, index: &usize, _, cx| {
+                                this.response_tab = *index;
+                                cx.notify();
+                            }))
+                            .child(Tab::new().label("Body"))
+                            .child(Tab::new().label(format!("Headers ({header_count})"))),
+                    )
+                    .child(self.render_status(cx)),
+            )
+            .child(self.render_response_content(cx))
+    }
+
+    fn render_status(&self, cx: &Context<Self>) -> impl IntoElement {
+        let model = self.model.read(cx);
+        let tags = div().h_flex().gap_2().px_3().items_center();
 
         match model.state() {
-            RequestState::Idle => div()
-                .text_color(muted)
-                .child("Send a request to see the response."),
-            RequestState::Sending => div().text_color(muted).child("Sending..."),
-            RequestState::Failed(message) => div()
-                .text_color(cx.theme().danger)
-                .child(SharedString::from(message.clone())),
-            RequestState::Done(response) => div()
-                .v_flex()
-                .gap_2()
-                .child(self.render_status(response, cx))
-                .child(
-                    self.render_section(
-                        "Headers",
-                        div()
-                            .v_flex()
-                            .text_sm()
-                            .children(response.headers.iter().map(|(name, value)| {
-                                div().child(SharedString::from(format!("{name}: {value}")))
-                            })),
-                        cx,
-                    ),
-                )
-                .child(self.render_section(
-                    "Body",
-                    Textarea::new(&self.response_body).readonly(true),
-                    cx,
-                )),
+            RequestState::Done(response) => {
+                let status = format!("{} {}", response.status, response.reason);
+                let status_tag = match response.status {
+                    200..=299 => Tag::success(),
+                    400..=599 => Tag::danger(),
+                    _ => Tag::warning(),
+                };
+                tags.child(status_tag.child(SharedString::from(status)))
+                    .child(Tag::secondary().child(format!("{} ms", response.elapsed.as_millis())))
+                    .child(Tag::secondary().child(format_size(response.body.len())))
+            }
+            _ => tags,
         }
     }
 
-    fn render_status(&self, response: &ApiResponse, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let color = match response.status {
-            200..=299 => theme.success,
-            400..=599 => theme.danger,
-            _ => theme.warning,
-        };
-        let summary = format!(
-            "{} {}  ·  {} ms  ·  {} B",
-            response.status,
-            response.reason,
-            response.elapsed.as_millis(),
-            response.body.len()
-        );
+    fn render_response_content(&self, cx: &Context<Self>) -> impl IntoElement {
+        let muted = cx.theme().muted_foreground;
+        let container = div().id("response-content").flex_1().min_h_0().p_3();
 
-        div().text_color(color).child(SharedString::from(summary))
+        match self.model.read(cx).state() {
+            RequestState::Idle => container
+                .text_color(muted)
+                .child("Send a request to see the response."),
+            RequestState::Sending => container.text_color(muted).child("Sending..."),
+            RequestState::Failed(message) => container
+                .text_color(cx.theme().danger)
+                .child(SharedString::from(message.clone())),
+            RequestState::Done(_) if self.response_tab == 0 => {
+                container.child(Textarea::new(&self.response_body).readonly(true).h_full())
+            }
+            RequestState::Done(response) => container
+                .overflow_y_scroll()
+                .child(self.render_response_headers(response, cx)),
+        }
+    }
+
+    fn render_response_headers(&self, response: &ApiResponse, cx: &Context<Self>) -> gpui_kit::Div {
+        div()
+            .v_flex()
+            .gap_1()
+            .text_sm()
+            .children(response.headers.iter().map(|(name, value)| {
+                div()
+                    .h_flex()
+                    .gap_3()
+                    .items_start()
+                    .child(
+                        div()
+                            .w(px(180.))
+                            .flex_shrink_0()
+                            .font_semibold()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(SharedString::from(name.clone())),
+                    )
+                    .child(div().flex_1().child(SharedString::from(value.clone())))
+            }))
+    }
+}
+
+fn format_size(bytes: usize) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
     }
 }
 
@@ -210,28 +287,17 @@ impl Render for ClientView {
         div()
             .size_full()
             .v_flex()
-            .gap_4()
-            .p_4()
-            .id("client-scroll")
-            .overflow_y_scroll()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(self.render_request_row(cx))
+            .child(self.render_url_bar(cx))
             .child(
                 div()
                     .h_flex()
-                    .gap_4()
-                    .child(div().flex_1().child(self.render_section(
-                        "Headers",
-                        Textarea::new(&self.headers),
-                        cx,
-                    )))
-                    .child(div().flex_1().child(self.render_section(
-                        "Body",
-                        Textarea::new(&self.body),
-                        cx,
-                    ))),
+                    .items_stretch()
+                    .flex_1()
+                    .min_h_0()
+                    .child(self.render_request_pane(cx))
+                    .child(self.render_response_pane(cx)),
             )
-            .child(self.render_response(cx))
     }
 }
