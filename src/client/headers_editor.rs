@@ -264,6 +264,11 @@ impl HeadersEditor {
         div()
             .h_flex()
             .gap_2()
+            .px_1()
+            .py_1()
+            .rounded_md()
+            .hover(|style| style.bg(cx.theme().muted.opacity(0.5)))
+            .when(!row.enabled, |this| this.opacity(0.5))
             .child(div().w(px(20.)).when(!is_last, |this| {
                 this.child(
                     Checkbox::new(("header-enabled", id))
