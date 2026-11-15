@@ -1,18 +1,20 @@
+use gpui_kit::component::Sizable;
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
+use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme, IndexPath, StyledExt};
-use gpui_kit::{Context, Entity, Subscription, Window, div, prelude::*, px};
+use gpui_kit::{Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
 
 use rally_core::{AuthDraft, AuthKind};
 
 const KINDS: [&str; 4] = ["No Auth", "Bearer Token", "Basic Auth", "API Key"];
-const LOCATIONS: [&str; 2] = ["Header", "Query Params"];
+const LABEL_WIDTH: f32 = 96.;
+const ROW_HEIGHT: f32 = 36.;
 
 pub struct AuthEditor {
     kind: AuthKind,
     in_query: bool,
     kind_select: Entity<SelectState<Vec<&'static str>>>,
-    location_select: Entity<SelectState<Vec<&'static str>>>,
     token: Entity<InputState>,
     username: Entity<InputState>,
     password: Entity<InputState>,
@@ -25,8 +27,6 @@ impl AuthEditor {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let kind_select =
             cx.new(|cx| SelectState::new(KINDS.to_vec(), Some(IndexPath::default()), window, cx));
-        let location_select = cx
-            .new(|cx| SelectState::new(LOCATIONS.to_vec(), Some(IndexPath::default()), window, cx));
         let token = cx.new(|cx| InputState::new(window, cx).placeholder("Token"));
         let username = cx.new(|cx| InputState::new(window, cx).placeholder("Username"));
         let password = cx.new(|cx| {
@@ -37,15 +37,11 @@ impl AuthEditor {
         let key_name = cx.new(|cx| InputState::new(window, cx).placeholder("X-API-Key"));
         let key_value = cx.new(|cx| InputState::new(window, cx).placeholder("Value"));
 
-        let subscriptions = vec![
-            cx.subscribe_in(&kind_select, window, Self::on_kind_event),
-            cx.subscribe_in(&location_select, window, Self::on_location_event),
-        ];
+        let subscriptions = vec![cx.subscribe_in(&kind_select, window, Self::on_kind_event)];
         Self {
             kind: AuthKind::None,
             in_query: false,
             kind_select,
-            location_select,
             token,
             username,
             password,
@@ -74,21 +70,8 @@ impl AuthEditor {
         cx.notify();
     }
 
-    fn on_location_event(
-        &mut self,
-        _select: &Entity<SelectState<Vec<&'static str>>>,
-        event: &SelectEvent<Vec<&'static str>>,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let SelectEvent::Confirm(Some(name)) = event {
-            self.in_query = *name == LOCATIONS[1];
-            cx.notify();
-        }
-    }
-
-    /// Replaces everything entered. The select-backed fields are assigned directly because
-    /// setting a select's value does not emit a selection event.
+    /// Replaces everything entered. The kind is assigned directly because setting a select's
+    /// value does not emit a selection event.
     pub fn set_draft(&mut self, draft: &AuthDraft, window: &mut Window, cx: &mut Context<Self>) {
         self.kind = draft.kind;
         self.in_query = draft.key_in_query;
@@ -99,12 +82,8 @@ impl AuthEditor {
             AuthKind::Basic => 2,
             AuthKind::ApiKey => 3,
         }];
-        let location = LOCATIONS[usize::from(draft.key_in_query)];
         self.kind_select.update(cx, |select, cx| {
             select.set_selected_value(&kind, window, cx)
-        });
-        self.location_select.update(cx, |select, cx| {
-            select.set_selected_value(&location, window, cx)
         });
 
         for (input, text) in [
@@ -136,66 +115,123 @@ impl AuthEditor {
 }
 
 impl AuthEditor {
-    fn field(
+    /// A form row: muted label on the left, the control filling the rest.
+    fn row(
         &self,
         label: &'static str,
         content: impl IntoElement,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         div()
-            .v_flex()
-            .gap_1()
+            .h_flex()
+            .gap_3()
+            .min_h(px(ROW_HEIGHT))
             .child(
                 div()
-                    .text_xs()
+                    .w(px(LABEL_WIDTH))
+                    .flex_shrink_0()
+                    .text_sm()
                     .text_color(cx.theme().muted_foreground)
                     .child(label),
             )
-            .child(content)
+            .child(div().flex_1().min_w_0().child(content))
+    }
+
+    /// What the selected scheme does, in the words of the tab it replaces in Postman.
+    fn help(&self) -> &'static [&'static str] {
+        match (self.kind, self.in_query) {
+            (AuthKind::None, _) => &[],
+            (AuthKind::ApiKey, true) => &["The key is appended to the request's query string."],
+            (AuthKind::ApiKey, false) => &[
+                "The key is added as a request header.",
+                "A header with the same name set in Headers takes precedence.",
+            ],
+            _ => &[
+                "The authorization header will be automatically generated when you send the request.",
+                "An Authorization header set in Headers takes precedence.",
+            ],
+        }
     }
 }
 
 impl Render for AuthEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let (border, muted) = (theme.border, theme.muted_foreground);
+
         let fields = match self.kind {
             AuthKind::None => div()
-                .text_sm()
-                .text_color(cx.theme().muted_foreground)
-                .child("This request does not use any authorization."),
+                .flex_1()
+                .v_flex()
+                .items_center()
+                .justify_center()
+                .gap_1()
+                .text_color(muted)
+                .child(div().font_semibold().child("No Auth"))
+                .child(
+                    div()
+                        .text_sm()
+                        .child("This request does not use any authorization."),
+                ),
             AuthKind::Bearer => {
                 div()
                     .v_flex()
                     .gap_3()
-                    .child(self.field("Token", Input::new(&self.token), cx))
+                    .child(self.row("Token", Input::new(&self.token), cx))
             }
             AuthKind::Basic => div()
                 .v_flex()
                 .gap_3()
-                .child(self.field("Username", Input::new(&self.username), cx))
-                .child(self.field("Password", Input::new(&self.password), cx)),
+                .child(self.row("Username", Input::new(&self.username), cx))
+                .child(self.row("Password", Input::new(&self.password).mask_toggle(), cx)),
             AuthKind::ApiKey => div()
                 .v_flex()
                 .gap_3()
-                .child(self.field("Key", Input::new(&self.key_name), cx))
-                .child(self.field("Value", Input::new(&self.key_value), cx))
-                .child(self.field(
-                    "Add to",
-                    div().w(px(200.)).child(Select::new(&self.location_select)),
-                    cx,
-                )),
+                .child(self.row("Key", Input::new(&self.key_name), cx))
+                .child(self.row("Value", Input::new(&self.key_value), cx))
+                .child(
+                    self.row(
+                        "Add to",
+                        div().w(px(260.)).child(
+                            TabBar::new("api-key-location")
+                                .segmented()
+                                .small()
+                                .selected_index(usize::from(self.in_query))
+                                .on_click(cx.listener(|this, index: &usize, _, cx| {
+                                    this.in_query = *index == 1;
+                                    cx.notify();
+                                }))
+                                .child(Tab::new().label("Header"))
+                                .child(Tab::new().label("Query Params")),
+                        ),
+                        cx,
+                    ),
+                ),
         };
 
         div()
             .id("auth-editor")
             .size_full()
             .v_flex()
-            .gap_4()
+            .gap_3()
             .overflow_y_scroll()
-            .child(self.field(
-                "Auth type",
-                div().w(px(200.)).child(Select::new(&self.kind_select)),
+            .child(self.row(
+                "Auth Type",
+                div().w(px(220.)).child(Select::new(&self.kind_select)),
                 cx,
             ))
-            .child(div().max_w(px(420.)).child(fields))
+            .when(self.kind != AuthKind::None, |this| {
+                this.child(
+                    div()
+                        .v_flex()
+                        .gap_1()
+                        .pl(px(LABEL_WIDTH + 12.))
+                        .text_xs()
+                        .text_color(muted)
+                        .children(self.help().iter().map(|line| SharedString::from(*line))),
+                )
+                .child(div().h(px(1.)).bg(border))
+            })
+            .child(fields)
     }
 }

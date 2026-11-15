@@ -4,7 +4,7 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme, IconName, Sizable, StyledExt};
 use gpui_kit::{
     Anchor, Context, Entity, MouseButton, SharedString, Subscription, Window, anchored, deferred,
-    div, point, prelude::*, px,
+    div, point, prelude::*, px, relative,
 };
 
 use rally_core::KeyValueRow;
@@ -13,6 +13,8 @@ const MAX_SUGGESTIONS: usize = 6;
 const ROW_HEIGHT: f32 = 36.;
 const CHECK_COL: f32 = 40.;
 const REMOVE_COL: f32 = 36.;
+/// Share of the table width taken by the Description column.
+const DESCRIPTION_WIDTH: f32 = 0.28;
 
 /// Which field of a row a suggestion dropdown belongs to.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -427,7 +429,11 @@ impl KeyValueEditor {
                 }),
             )
             .child(divider())
-            .child(cell(&row.description))
+            .child(
+                cell(&row.description)
+                    .flex_none()
+                    .w(relative(DESCRIPTION_WIDTH)),
+            )
             .child(divider())
             .child(
                 div()
@@ -481,7 +487,11 @@ impl Render for KeyValueEditor {
                             .child(div().w(px(CHECK_COL)))
                             .child(title("Name"))
                             .child(title("Value"))
-                            .child(title("Description"))
+                            .child(
+                                title("Description")
+                                    .flex_none()
+                                    .w(relative(DESCRIPTION_WIDTH)),
+                            )
                             .child(div().w(px(REMOVE_COL))),
                     )
                     .children(

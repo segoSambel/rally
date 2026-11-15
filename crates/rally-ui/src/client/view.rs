@@ -7,7 +7,8 @@ use gpui_kit::component::{
     ActiveTheme, Disableable, Icon, IconName, IndexPath, Sizable, StyledExt,
 };
 use gpui_kit::{
-    ClipboardItem, Context, Entity, SharedString, Subscription, Window, div, prelude::*, px,
+    ClipboardItem, Context, Entity, Focusable, SharedString, Subscription, Window, div, prelude::*,
+    px,
 };
 
 use rally_core::{
@@ -234,8 +235,11 @@ impl ClientView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::PressEnter { .. } = event {
-            self.send(cx);
+        match event {
+            InputEvent::PressEnter { .. } => self.send(cx),
+            // Re-render so the field's focus ring follows focus.
+            InputEvent::Focus | InputEvent::Blur => cx.notify(),
+            InputEvent::Change => {}
         }
     }
 
@@ -269,8 +273,9 @@ impl ClientView {
 }
 
 impl ClientView {
-    fn render_url_bar(&self, cx: &Context<Self>) -> impl IntoElement {
+    fn render_url_bar(&self, window: &Window, cx: &Context<Self>) -> impl IntoElement {
         let sending = self.model.read(cx).is_sending();
+        let focused = self.url.read(cx).focus_handle(cx).is_focused(window);
 
         div()
             .h_flex()
@@ -289,7 +294,11 @@ impl ClientView {
                     .px_1()
                     .rounded_md()
                     .border_1()
-                    .border_color(cx.theme().border)
+                    .border_color(if focused {
+                        cx.theme().ring
+                    } else {
+                        cx.theme().border
+                    })
                     .bg(cx.theme().background)
                     .child(
                         div()
@@ -560,7 +569,7 @@ impl ClientView {
 }
 
 impl Render for ClientView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
 
         div()
@@ -591,7 +600,7 @@ impl Render for ClientView {
                             .min_w_0()
                             .v_flex()
                             .child(self.render_tab_strip(cx))
-                            .child(self.render_url_bar(cx))
+                            .child(self.render_url_bar(window, cx))
                             .child(
                                 div()
                                     .h_flex()
