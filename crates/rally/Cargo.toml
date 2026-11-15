@@ -2,6 +2,8 @@
 name = "rally"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description = "A lightweight desktop API client for Windows"
 
 [dependencies]
 rally-ui.workspace = true

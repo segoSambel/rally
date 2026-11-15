@@ -2,6 +2,8 @@
 name = "rally-core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description = "Rally core: requests, auth, history and console, without any UI"
 
 [dependencies]
 ureq.workspace = true

@@ -5,6 +5,7 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [workspace.dependencies]
 gpui-kit = { version = "0.7", features = ["tree-sitter"] }
