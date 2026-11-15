@@ -1,7 +1,5 @@
 use gpui_kit::component::button::{Button, ButtonVariants};
-use gpui_kit::component::input::{
-    Editor, EditorState, Input, InputEvent, InputState, Textarea, TextareaState,
-};
+use gpui_kit::component::input::{Editor, EditorState, Input, InputEvent, InputState};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tab::{Tab, TabBar};
@@ -17,7 +15,9 @@ use rally_core::{
 
 use super::model::{ClientModel, RequestCompleted, RequestState};
 use crate::history::{HistoryModel, HistoryPanel, OpenEntry};
-use crate::widgets::{AuthEditor, KeyValueEditor, MethodItem, MethodSelect, status_color};
+use crate::widgets::{
+    AuthEditor, BodyDraft, BodyEditor, KeyValueEditor, MethodItem, MethodSelect, status_color,
+};
 
 pub struct ClientView {
     model: Entity<ClientModel>,
@@ -30,7 +30,7 @@ pub struct ClientView {
     params: Entity<KeyValueEditor>,
     auth: Entity<AuthEditor>,
     headers: Entity<KeyValueEditor>,
-    body: Entity<TextareaState>,
+    body: Entity<BodyEditor>,
     response_body: Entity<EditorState>,
     request_tab: usize,
     response_tab: usize,
@@ -48,7 +48,7 @@ impl ClientView {
         let params = cx.new(|cx| KeyValueEditor::new("Parameter", &[], window, cx));
         let auth = cx.new(|cx| AuthEditor::new(window, cx));
         let headers = cx.new(|cx| KeyValueEditor::new("Header", COMMON_HEADER_NAMES, window, cx));
-        let body = cx.new(|cx| TextareaState::new(window, cx).placeholder("Request body"));
+        let body = cx.new(|cx| BodyEditor::new(window, cx));
         let response_body = cx.new(|cx| {
             EditorState::new(window, cx)
                 .language("json")
@@ -64,6 +64,7 @@ impl ClientView {
             // Re-render when a table changes so the tab counts stay current.
             cx.observe(&params, |_, _, cx| cx.notify()),
             cx.observe(&headers, |_, _, cx| cx.notify()),
+            cx.observe(&body, |_, _, cx| cx.notify()),
         ];
         Self {
             model,
@@ -144,9 +145,13 @@ impl ClientView {
         });
         self.auth
             .update(cx, |auth, cx| auth.set_draft(&draft.auth, window, cx));
-        self.body.update(cx, |body, cx| {
-            body.set_value(draft.body.clone(), window, cx)
-        });
+        let body = BodyDraft {
+            kind: draft.body_kind,
+            text: draft.body.clone(),
+            form: draft.form.clone(),
+        };
+        self.body
+            .update(cx, |editor, cx| editor.set_draft(&body, window, cx));
         cx.notify();
     }
 
@@ -177,15 +182,16 @@ impl ClientView {
 
     /// The current editor contents.
     fn snapshot(&self, cx: &Context<Self>) -> RequestDraft {
+        let body = self.body.read(cx).draft(cx);
         RequestDraft {
             method: self.method,
             url: self.url.read(cx).value().to_string(),
             params: self.params.read(cx).rows(cx),
             headers: self.headers.read(cx).rows(cx),
             auth: self.auth.read(cx).draft(cx),
-            body_kind: BodyKind::Text,
-            body: self.body.read(cx).value().to_string(),
-            form: Vec::new(),
+            body_kind: body.kind,
+            body: body.text,
+            form: body.form,
         }
     }
 
@@ -295,12 +301,27 @@ impl ClientView {
         )
     }
 
+    /// The Body tab, with a dot when the request has a body.
+    fn body_tab(&self, cx: &Context<Self>) -> Tab {
+        let tab = Tab::new().label("Body");
+        if self.body.read(cx).kind() == BodyKind::None {
+            return tab;
+        }
+        tab.suffix(
+            div()
+                .ml_1()
+                .text_xs()
+                .text_color(cx.theme().primary)
+                .child("●"),
+        )
+    }
+
     fn render_request_pane(&self, cx: &Context<Self>) -> impl IntoElement {
         let editor = match self.request_tab {
             0 => self.params.clone().into_any_element(),
             1 => self.auth.clone().into_any_element(),
             2 => self.headers.clone().into_any_element(),
-            _ => Textarea::new(&self.body).h_full().into_any_element(),
+            _ => self.body.clone().into_any_element(),
         };
 
         div()
@@ -321,7 +342,7 @@ impl ClientView {
                     .child(self.tab_with_count("Params", self.params.read(cx).count(cx), cx))
                     .child(Tab::new().label("Authorization"))
                     .child(self.tab_with_count("Headers", self.headers.read(cx).count(cx), cx))
-                    .child(Tab::new().label("Body")),
+                    .child(self.body_tab(cx)),
             )
             .child(div().flex_1().min_h_0().p_4().child(editor))
     }
