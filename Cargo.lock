@@ -4863,10 +4863,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 name = "rally"
 version = "0.1.0"
 dependencies = [
- "gpui-kit",
- "rally-core",
- "rust-embed",
- "serde_json",
+ "rally-ui",
 ]
 
 [[package]]
@@ -4874,6 +4871,16 @@ name = "rally-core"
 version = "0.1.0"
 dependencies = [
  "ureq",
+]
+
+[[package]]
+name = "rally-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui-kit",
+ "rally-core",
+ "rust-embed",
+ "serde_json",
 ]
 
 [[package]]

@@ -4,7 +4,4 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-gpui-kit.workspace = true
-serde_json.workspace = true
-rally-core.workspace = true
-rust-embed.workspace = true
+rally-ui.workspace = true

@@ -11,6 +11,7 @@ gpui-kit = { version = "0.7", features = ["tree-sitter"] }
 serde_json = "1.0.154"
 ureq = "3.5.2"
 rally-core = { path = "crates/rally-core" }
+rally-ui = { path = "crates/rally-ui" }
 # Embed bundled icons in debug builds too. Without it, rust-embed reads them from a
 # compile-time host path, which a Windows exe cross-built from WSL cannot see.
 rust-embed = { version = "8", features = ["debug-embed"] }
