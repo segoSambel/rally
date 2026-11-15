@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, io};
@@ -126,9 +127,69 @@ impl History {
     }
 }
 
-/// `%APPDATA%\Rally\history.json`, or `None` when `APPDATA` is not set.
+/// The operating systems whose conventions for per-user data Rally follows.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Platform {
+    Windows,
+    MacOs,
+    /// Linux and other Unix systems, following the XDG base directory specification.
+    Linux,
+}
+
+impl Platform {
+    /// The platform this program was compiled for.
+    pub fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Platform::Windows
+        } else if cfg!(target_os = "macos") {
+            Platform::MacOs
+        } else {
+            Platform::Linux
+        }
+    }
+}
+
+/// Where history is saved on this machine, or `None` when the environment does not say where
+/// the user's data directory is. See [`history_path_for`].
 pub fn default_history_path() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join("Rally").join("history.json"))
+    history_path_for(Platform::current(), |name| std::env::var_os(name))
+}
+
+/// The history file for `platform`, using `env` to read environment variables:
+///
+/// - Windows: `%APPDATA%\Rally\history.json`
+/// - macOS: `~/Library/Application Support/Rally/history.json`
+/// - Linux: `$XDG_DATA_HOME/rally/history.json`, or `~/.local/share/rally/history.json` when
+///   `XDG_DATA_HOME` is unset, empty or not an absolute path
+///
+/// Empty variables count as unset.
+pub fn history_path_for(
+    platform: Platform,
+    env: impl Fn(&str) -> Option<OsString>,
+) -> Option<PathBuf> {
+    let var = |name: &str| {
+        env(name)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+    };
+
+    match platform {
+        Platform::Windows => Some(var("APPDATA")?.join("Rally").join("history.json")),
+        Platform::MacOs => Some(
+            var("HOME")?
+                .join("Library")
+                .join("Application Support")
+                .join("Rally")
+                .join("history.json"),
+        ),
+        Platform::Linux => {
+            // The XDG specification says to ignore relative paths.
+            let data = var("XDG_DATA_HOME")
+                .filter(|dir| dir.is_absolute())
+                .or_else(|| Some(var("HOME")?.join(".local").join("share")))?;
+            Some(data.join("rally").join("history.json"))
+        }
+    }
 }
 
 fn backup_path(path: &Path) -> PathBuf {

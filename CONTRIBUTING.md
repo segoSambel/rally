@@ -5,11 +5,15 @@ and where code belongs.
 
 ## Getting set up
 
-Rally is built on Linux or WSL and cross-compiled to Windows. Follow the
-[Prerequisites](README.md#prerequisites) and [Quick Start](README.md#quick-start) in the README.
-Every cargo command that builds or lints the app goes through `cargo xwin` with
-`--target x86_64-pc-windows-msvc`. A plain `cargo build` produces a Linux binary, which is the
-wrong target.
+Follow the [Prerequisites](README.md#prerequisites) and [Quick Start](README.md#quick-start) in the
+README. There are two ways to build:
+
+- **Cross-compiling to Windows from Linux or WSL**, which is how Rally is developed today. Every
+  cargo command that builds or lints goes through `cargo xwin` with
+  `--target x86_64-pc-windows-msvc`. A plain `cargo build` there produces a Linux binary, which is
+  the wrong target for that setup.
+- **Building natively** on Windows, Linux or macOS with plain `cargo build`. This is what the CI
+  workflow does.
 
 ## Before you commit
 
@@ -21,6 +25,13 @@ cargo xwin clippy --workspace --target x86_64-pc-windows-msvc -- -D warnings
 cargo xwin build --target x86_64-pc-windows-msvc
 ```
 
+If you build natively, run `cargo clippy --workspace -- -D warnings` and `cargo build --workspace`
+instead of the two `cargo xwin` commands. The [CI workflow](.github/workflows/ci.yml) runs fmt,
+clippy and build on Windows, Linux and macOS for every push to `main` and every pull request.
+
+Keep platform-specific code behind `cfg(target_os = ...)` or an explicit platform value. The
+history location is an example: `history_path_for` in `rally-core` takes the platform as an
+argument, so every platform's rules can be checked from any machine.
 There are no automated tests yet. Start the app and try the change by hand: GPUI views are not
 covered by anything else. Anything in `rally-core` has no GPUI dependency and can be tested on the
 host with plain `cargo test -p rally-core`.

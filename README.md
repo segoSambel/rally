@@ -9,7 +9,9 @@
 
 ## Overview
 
-Rally is a lightweight desktop API client for Windows, in the spirit of Postman and Bruno but deliberately small: one window, no accounts, no cloud. It is written in Rust with [GPUI](https://www.gpui.rs) (through `gpui-kit`) and is cross-compiled from WSL with `cargo-xwin`.
+Rally is a lightweight desktop API client, in the spirit of Postman and Bruno but deliberately small: one window, no accounts, no cloud. It is written in Rust with [GPUI](https://www.gpui.rs) (through `gpui-kit`).
+
+Rally is developed and tested on Windows, cross-compiled from WSL with `cargo-xwin`. Linux and macOS are the next targets: Rally's own code has only a few platform-specific details, all guarded, and a [CI workflow](.github/workflows/ci.yml) builds on all three systems. Linux and macOS have not been run by hand yet.
 
 The workspace is split into three crates:
 
@@ -67,7 +69,7 @@ Editor state is held as a `RequestDraft`: what the user typed, not what is sent.
 | `rally-core::transport` | The blocking `send` call over `ureq` |
 | `rally-core::draft` | `RequestDraft`, key/value rows, auth and body drafts, and building the request |
 | `rally-core::auth` / `url` | Auth headers (Bearer, Basic, API key) and query-string building |
-| `rally-core::history` | Capped, atomic JSON history file under `%APPDATA%` |
+| `rally-core::history` | Capped, atomic JSON history file in the user data directory, with the location chosen per platform |
 | `rally-core::console` | The in-memory request log and the cURL export |
 | `rally-core::format` / `headers` | Body, size and duration formatting; header name and value suggestions |
 | `rally-ui::client` | The root view, request tabs, and the tab strip and status bar |
@@ -79,7 +81,9 @@ Editor state is held as a `RequestDraft`: what the user typed, not what is sent.
 
 ## Prerequisites
 
-Rally is built on Linux or WSL and cross-compiled to Windows.
+### Cross-compiling to Windows (Linux or WSL)
+
+This is how Rally is developed today.
 
 | Requirement | Notes |
 |-------------|-------|
@@ -97,6 +101,16 @@ rustup target add x86_64-pc-windows-msvc
 cargo install --locked cargo-xwin
 ```
 
+### Building natively
+
+The CI workflow builds natively on all three systems with a plain `cargo build`. None of these have been tried by hand yet.
+
+| System | Requirements |
+|--------|--------------|
+| Windows | Rust with the MSVC toolchain (Visual Studio Build Tools) |
+| Linux | Rust and the native libraries GPUI links against. On Debian or Ubuntu: `sudo apt install libfontconfig-dev libfreetype-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libxcb1-dev libx11-xcb-dev`. At run time GPUI renders through `wgpu`, which needs a working GPU driver |
+| macOS | Rust and the Xcode command line tools. Further requirements, if any, are not verified yet |
+
 ---
 
 ## Quick Start
@@ -109,7 +123,15 @@ cargo xwin build --target x86_64-pc-windows-msvc
 
 The executable is written to `target/x86_64-pc-windows-msvc/debug/rally.exe`. Always pass the Windows target through `cargo xwin`: a plain `cargo build` produces a Linux binary, which is the wrong target.
 
-### 2. Run
+### Building natively (Linux, macOS, Windows)
+
+```bash
+cargo run
+```
+
+`cargo run` builds for the machine you are on and starts the app. Use `cargo build` to only build, which writes `target/debug/rally` (`rally.exe` on Windows).
+
+### 2. Run the cross-compiled Windows build
 
 From a WSL shell, inside the repository:
 
@@ -127,11 +149,15 @@ Enter `https://httpbin.org/get` in the URL field and press **Send** (or Enter). 
 
 ## Configuration
 
-Rally has no configuration file. It reads one environment variable, set by Windows itself:
+Rally has no configuration file. History is saved in the user's data directory, following each system's convention:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `APPDATA` | set by Windows | History is saved to `%APPDATA%\Rally\history.json`. If the variable is not set, Rally still runs but does not save history |
+| System | History file | Read from |
+|--------|--------------|-----------|
+| Windows | `%APPDATA%\Rally\history.json` | `APPDATA` |
+| macOS | `~/Library/Application Support/Rally/history.json` | `HOME` |
+| Linux | `$XDG_DATA_HOME/rally/history.json`, or `~/.local/share/rally/history.json` | `XDG_DATA_HOME`, `HOME` |
+
+Empty variables count as unset, and a relative `XDG_DATA_HOME` is ignored, as the XDG specification says. If no location can be found, Rally still runs but does not save history.
 
 History is written atomically (a temporary file, then a rename). A history file that cannot be parsed is moved aside to `history.json.bak` and Rally starts with an empty history.
 
@@ -142,6 +168,7 @@ History is written atomically (a temporary file, then a rename). A history file 
 ```
 rally/
 ├── Cargo.toml                  # workspace: shared versions, features and dependencies
+├── .github/workflows/ci.yml    # fmt, clippy and build on Windows, Linux and macOS
 ├── crates/
 │   ├── rally-core/             # no GPUI: requests, auth, history, console
 │   │   └── src/
@@ -169,6 +196,7 @@ rally/
 | Type check | `cargo xwin check --target x86_64-pc-windows-msvc` |
 | Lint | `cargo xwin clippy --workspace --target x86_64-pc-windows-msvc -- -D warnings` |
 | Format check | `cargo fmt --all --check` |
+| Native build, lint (Linux, macOS, Windows) | `cargo build --workspace`, `cargo clippy --workspace -- -D warnings` |
 
 `cargo fmt` does not depend on the target. There are no automated tests yet. Because `rally-core` has no GPUI dependency, it can be tested on the host without cross-compiling.
 
@@ -176,9 +204,11 @@ rally/
 
 ## Known limitations
 
-- **Debug builds only.** A release build cannot be produced from WSL. gpui's build script compiles its shaders only when the build machine is Windows, so a cross-compiled release build is missing them.
-- **The debug executable must be started from a WSL directory.** In a debug build gpui compiles its shaders at runtime from a source path recorded at build time, which is a WSL path. Started from a normal Windows folder (for example by double-clicking), it stops at startup with `The system cannot find the path specified`.
+- **Linux and macOS have not been run by hand yet.** They are built in CI only, and the CI workflow itself has not been run yet.
+- **No release build when cross-compiling from WSL.** gpui's build script compiles its shaders only when the build machine is Windows, so a cross-compiled release build is missing them. A native Windows build does not have this limit, but it has not been tried.
+- **The cross-compiled debug executable must be started from a WSL directory.** In a debug build gpui compiles its shaders at runtime from a source path recorded at build time, which is a WSL path. Started from a normal Windows folder (for example by double-clicking), it stops at startup with `The system cannot find the path specified`.
 - **History stores secrets in plain text.** Bearer tokens, Basic Auth passwords and API keys are saved unencrypted in `history.json`. See [SECURITY.md](SECURITY.md).
+- **Copy cURL uses POSIX shell quoting** (bash, zsh). The command will not paste correctly into `cmd.exe` or PowerShell.
 - **Not supported yet:** `HEAD` and `OPTIONS`, multipart and binary bodies, environment variables, collections, cancelling a request in flight, and saving tabs between runs.
 
 ---

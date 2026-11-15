@@ -16,7 +16,9 @@ pub use console::{
 pub use draft::{AuthDraft, AuthKind, BodyKind, KeyValueRow, RequestDraft};
 pub use format::{format_ago, format_body, format_duration, format_size};
 pub use headers::{COMMON_HEADER_NAMES, common_header_values};
-pub use history::{History, HistoryEntry, default_history_path, now_unix};
+pub use history::{
+    History, HistoryEntry, Platform, default_history_path, history_path_for, now_unix,
+};
 pub use request::{ApiRequest, Method};
 pub use response::ApiResponse;
 pub use transport::send;

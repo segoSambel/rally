@@ -22,14 +22,18 @@ had a release yet, so everything so far is listed under Unreleased.
   `Content-Type` that a header you set yourself overrides.
 - Request tabs: each keeps its own request, response and selected panes, and a request in flight
   finishes into the tab that sent it.
-- Request history: the last 100 requests are saved to `%APPDATA%\Rally\history.json` and shown in
-  a sidebar; clicking one restores the whole editor.
+- Request history: the last 100 requests are saved to a file in the user data directory and shown
+  in a sidebar; clicking one restores the whole editor.
 - Console panel: the raw request and response of each request sent this session (last 200), error
   details for failed requests, and Copy cURL.
 - Rally light and dark themes with an indigo accent, dark by default, with a toggle in the status
   bar.
 - Window layout: tab strip, status bar and a response format pill.
 - App icon, embedded in the Windows executable.
+- History location that follows each platform's convention: `%APPDATA%\Rally` on Windows,
+  `~/Library/Application Support/Rally` on macOS, `$XDG_DATA_HOME/rally` or
+  `~/.local/share/rally` on Linux.
+- CI workflow that runs fmt, clippy and build on Windows, Linux and macOS.
 - README, MIT license, contributing guide, security policy and `.gitattributes`.
 
 ### Changed
@@ -38,6 +42,7 @@ had a release yet, so everything so far is listed under Unreleased.
 
 ### Known issues
 
+- Linux and macOS have not been run by hand yet, and the CI workflow has not been run yet.
 - Release builds cannot be produced from WSL, and the debug executable only runs when started from
   a WSL directory. See the README for details.
 - History saves Bearer tokens, Basic Auth passwords and API keys in plain text.

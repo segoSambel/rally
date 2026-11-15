@@ -16,7 +16,7 @@ impl HistoryModel {
         let history = match &path {
             Some(path) => History::load(path),
             None => {
-                eprintln!("rally: APPDATA is not set; history will not be saved");
+                eprintln!("rally: cannot find the user data directory; history will not be saved");
                 History::default()
             }
         };
