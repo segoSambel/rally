@@ -88,16 +88,3 @@ pub fn send(request: ApiRequest) -> Result<ApiResponse, String> {
         elapsed,
     })
 }
-
-/// Parses one `Name: value` per line; blank lines are skipped.
-pub fn parse_headers(text: &str) -> Result<Vec<(String, String)>, String> {
-    text.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            line.split_once(':')
-                .map(|(name, value)| (name.trim().to_string(), value.trim().to_string()))
-                .ok_or_else(|| format!("Invalid header line (expected `Name: value`): {line}"))
-        })
-        .collect()
-}

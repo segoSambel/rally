@@ -7,7 +7,8 @@ use gpui_kit::component::{ActiveTheme, IndexPath, StyledExt};
 use gpui_kit::{Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
 
 use super::client_model::{ClientModel, RequestState};
-use super::http::{self, ApiRequest, ApiResponse, Method};
+use super::headers_editor::HeadersEditor;
+use super::http::{ApiRequest, ApiResponse, Method};
 
 type MethodSelect = Vec<&'static str>;
 
@@ -16,7 +17,7 @@ pub struct ClientView {
     method: Method,
     method_select: Entity<SelectState<MethodSelect>>,
     url: Entity<InputState>,
-    headers: Entity<TextareaState>,
+    headers: Entity<HeadersEditor>,
     body: Entity<TextareaState>,
     response_body: Entity<TextareaState>,
     request_tab: usize,
@@ -30,8 +31,7 @@ impl ClientView {
         let method_select =
             cx.new(|cx| SelectState::new(methods, Some(IndexPath::default()), window, cx));
         let url = cx.new(|cx| InputState::new(window, cx).placeholder("https://api.example.com"));
-        let headers = cx
-            .new(|cx| TextareaState::new(window, cx).placeholder("Content-Type: application/json"));
+        let headers = cx.new(|cx| HeadersEditor::new(window, cx));
         let body = cx.new(|cx| TextareaState::new(window, cx).placeholder("Request body"));
         let response_body = cx.new(|cx| TextareaState::new(window, cx));
 
@@ -105,13 +105,7 @@ impl ClientView {
             return;
         }
 
-        let headers = match http::parse_headers(&self.headers.read(cx).value()) {
-            Ok(headers) => headers,
-            Err(message) => {
-                self.model.update(cx, |model, cx| model.fail(message, cx));
-                return;
-            }
-        };
+        let headers = self.headers.read(cx).headers(cx);
         let request = ApiRequest {
             method: self.method,
             url,
@@ -153,8 +147,8 @@ impl ClientView {
 
     fn render_request_pane(&self, cx: &Context<Self>) -> impl IntoElement {
         let editor = match self.request_tab {
-            0 => Textarea::new(&self.headers),
-            _ => Textarea::new(&self.body),
+            0 => self.headers.clone().into_any_element(),
+            _ => Textarea::new(&self.body).h_full().into_any_element(),
         };
 
         div()
@@ -174,7 +168,7 @@ impl ClientView {
                     .child(Tab::new().label("Headers"))
                     .child(Tab::new().label("Body")),
             )
-            .child(div().flex_1().min_h_0().p_3().child(editor.h_full()))
+            .child(div().flex_1().min_h_0().p_3().child(editor))
     }
 
     fn render_response_pane(&self, cx: &Context<Self>) -> impl IntoElement {
