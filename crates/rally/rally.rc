@@ -1,0 +1,2 @@
+// Resource ID 1 is the app icon gpui loads for the window class, the taskbar and the exe.
+1 ICON "assets/icon/rally.ico"
