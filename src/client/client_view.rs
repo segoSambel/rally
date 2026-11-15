@@ -95,6 +95,9 @@ impl ClientView {
             cx.observe_in(&model, window, Self::on_model_change),
             cx.subscribe_in(&url, window, Self::on_url_event),
             cx.subscribe_in(&method_select, window, Self::on_method_event),
+            // Re-render when a table changes so the tab counts stay current.
+            cx.observe(&params, |_, _, cx| cx.notify()),
+            cx.observe(&headers, |_, _, cx| cx.notify()),
         ];
         Self {
             model,
@@ -256,6 +259,20 @@ impl ClientView {
             )
     }
 
+    fn tab_with_count(&self, label: &'static str, count: usize, cx: &Context<Self>) -> Tab {
+        let tab = Tab::new().label(label);
+        if count == 0 {
+            return tab;
+        }
+        tab.suffix(
+            div()
+                .ml_1()
+                .text_xs()
+                .text_color(cx.theme().primary)
+                .child(count.to_string()),
+        )
+    }
+
     fn render_request_pane(&self, cx: &Context<Self>) -> impl IntoElement {
         let editor = match self.request_tab {
             0 => self.params.clone().into_any_element(),
@@ -279,9 +296,9 @@ impl ClientView {
                         this.request_tab = *index;
                         cx.notify();
                     }))
-                    .child(Tab::new().label("Params"))
+                    .child(self.tab_with_count("Params", self.params.read(cx).count(cx), cx))
                     .child(Tab::new().label("Authorization"))
-                    .child(Tab::new().label("Headers"))
+                    .child(self.tab_with_count("Headers", self.headers.read(cx).count(cx), cx))
                     .child(Tab::new().label("Body")),
             )
             .child(div().flex_1().min_h_0().p_4().child(editor))

@@ -35,12 +35,17 @@ pub const COMMON_HEADERS: &[&str] = &[
     "X-Requested-With",
 ];
 const MAX_SUGGESTIONS: usize = 6;
+const ROW_HEIGHT: f32 = 36.;
+const CHECK_COL: f32 = 40.;
+const REMOVE_COL: f32 = 36.;
 
 struct HeaderRow {
     id: usize,
     enabled: bool,
     key: Entity<InputState>,
     value: Entity<InputState>,
+    /// Free-form note for the row; never sent with the request.
+    description: Entity<InputState>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -90,17 +95,26 @@ impl KeyValueEditor {
             .collect()
     }
 
+    /// Number of rows that will be sent.
+    pub fn count(&self, cx: &gpui_kit::App) -> usize {
+        self.pairs(cx).len()
+    }
+
     fn push_row(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let id = self.next_id;
         self.next_id += 1;
 
         let key = cx.new(|cx| InputState::new(window, cx).placeholder(self.key_placeholder));
         let value = cx.new(|cx| InputState::new(window, cx).placeholder("Value"));
+        let description = cx.new(|cx| InputState::new(window, cx).placeholder("Description"));
         let subscriptions = vec![
             cx.subscribe_in(&key, window, move |this, _, event, window, cx| {
                 this.on_key_event(id, event, window, cx)
             }),
             cx.subscribe_in(&value, window, |this, _, event, window, cx| {
+                this.on_value_event(event, window, cx)
+            }),
+            cx.subscribe_in(&description, window, |this, _, event, window, cx| {
                 this.on_value_event(event, window, cx)
             }),
         ];
@@ -109,6 +123,7 @@ impl KeyValueEditor {
             enabled: true,
             key,
             value,
+            description,
             _subscriptions: subscriptions,
         });
     }
@@ -116,7 +131,9 @@ impl KeyValueEditor {
     /// Keeps exactly one empty row at the end of the table.
     fn ensure_trailing_row(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let last_is_empty = self.rows.last().is_some_and(|row| {
-            row.key.read(cx).value().is_empty() && row.value.read(cx).value().is_empty()
+            [&row.key, &row.value, &row.description]
+                .iter()
+                .all(|input| input.read(cx).value().is_empty())
         });
         if !last_is_empty {
             self.push_row(window, cx);
@@ -229,7 +246,7 @@ impl KeyValueEditor {
         deferred(
             anchored()
                 .anchor(Anchor::TopLeft)
-                .offset(point(px(0.), px(38.)))
+                .offset(point(px(0.), px(ROW_HEIGHT)))
                 .snap_to_window()
                 .child(
                     div()
@@ -270,78 +287,113 @@ impl KeyValueEditor {
     fn render_row(&self, row: &HeaderRow, is_last: bool, cx: &Context<Self>) -> impl IntoElement {
         let id = row.id;
         let suggestions = self.suggestions(id, cx);
+        let border = cx.theme().border;
+
+        let cell = |input: &Entity<InputState>| {
+            div().flex_1().min_w_0().h_full().h_flex().child(
+                div()
+                    .flex_1()
+                    .child(Input::new(input).appearance(false).focus_bordered(false)),
+            )
+        };
+        let divider = || div().w(px(1.)).h_full().bg(border);
 
         div()
             .h_flex()
-            .gap_2()
-            .px_1()
-            .py_1()
-            .rounded_md()
-            .hover(|style| style.bg(cx.theme().muted.opacity(0.5)))
+            .h(px(ROW_HEIGHT))
+            .border_t_1()
+            .border_color(border)
+            .hover(|style| style.bg(cx.theme().muted.opacity(0.3)))
             .when(!row.enabled, |this| this.opacity(0.5))
-            .child(div().w(px(20.)).when(!is_last, |this| {
-                this.child(
-                    Checkbox::new(("header-enabled", id))
-                        .checked(row.enabled)
-                        .on_click(cx.listener(move |this, checked: &bool, _, cx| {
-                            if let Some(row) = this.rows.iter_mut().find(|row| row.id == id) {
-                                row.enabled = *checked;
-                                cx.notify();
-                            }
-                        })),
-                )
-            }))
             .child(
                 div()
-                    .flex_1()
-                    .child(Input::new(&row.key))
-                    .when(!suggestions.is_empty(), |this| {
-                        this.child(self.render_suggestions(id, suggestions, cx))
+                    .w(px(CHECK_COL))
+                    .h_full()
+                    .h_flex()
+                    .justify_center()
+                    .when(!is_last, |this| {
+                        this.child(
+                            Checkbox::new(("header-enabled", id))
+                                .checked(row.enabled)
+                                .on_click(cx.listener(move |this, checked: &bool, _, cx| {
+                                    if let Some(row) = this.rows.iter_mut().find(|r| r.id == id) {
+                                        row.enabled = *checked;
+                                        cx.notify();
+                                    }
+                                })),
+                        )
                     }),
             )
-            .child(div().flex_1().child(Input::new(&row.value)))
-            .child(div().w(px(32.)).when(!is_last, |this| {
-                this.child(
-                    Button::new(("header-remove", id))
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Close)
-                        .on_click(
-                            cx.listener(move |this, _, window, cx| this.remove(id, window, cx)),
-                        ),
-                )
+            .child(divider())
+            .child(cell(&row.key).when(!suggestions.is_empty(), |this| {
+                this.child(self.render_suggestions(id, suggestions, cx))
             }))
+            .child(divider())
+            .child(cell(&row.value))
+            .child(divider())
+            .child(cell(&row.description))
+            .child(divider())
+            .child(
+                div()
+                    .w(px(REMOVE_COL))
+                    .h_full()
+                    .h_flex()
+                    .justify_center()
+                    .when(!is_last, |this| {
+                        this.child(
+                            Button::new(("header-remove", id))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Close)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.remove(id, window, cx)
+                                })),
+                        )
+                    }),
+            )
     }
 }
 
 impl Render for KeyValueEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let last = self.rows.len().saturating_sub(1);
+        let theme = cx.theme();
+        let (border, muted) = (theme.border, theme.muted_foreground);
 
-        let muted = cx.theme().muted_foreground;
+        let title = |text: &'static str| div().flex_1().px_3().h_full().h_flex().child(text);
 
         div()
             .id("key-value-editor")
             .size_full()
             .v_flex()
-            .gap_2()
             .overflow_y_scroll()
             .child(
                 div()
-                    .h_flex()
-                    .gap_2()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(div().w(px(20.)))
-                    .child(div().flex_1().child("Key"))
-                    .child(div().flex_1().child("Value"))
-                    .child(div().w(px(32.))),
-            )
-            .children(
-                self.rows
-                    .iter()
-                    .enumerate()
-                    .map(|(index, row)| self.render_row(row, index == last, cx)),
+                    .v_flex()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(border)
+                    .child(
+                        div()
+                            .h_flex()
+                            .h(px(ROW_HEIGHT))
+                            .rounded_t_md()
+                            .bg(theme.tab_bar)
+                            .text_sm()
+                            .font_semibold()
+                            .text_color(muted)
+                            .child(div().w(px(CHECK_COL)))
+                            .child(title("Name"))
+                            .child(title("Value"))
+                            .child(title("Description"))
+                            .child(div().w(px(REMOVE_COL))),
+                    )
+                    .children(
+                        self.rows
+                            .iter()
+                            .enumerate()
+                            .map(|(index, row)| self.render_row(row, index == last, cx)),
+                    ),
             )
     }
 }
