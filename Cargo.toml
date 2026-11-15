@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-gpui-kit = { version = "0.7" }
+gpui-kit = { version = "0.7", features = ["tree-sitter"] }
 serde_json = "1.0.154"
 ureq = "3.5.2"
 # Embed bundled icons in debug builds too. Without it, rust-embed reads them from a

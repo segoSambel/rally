@@ -1,10 +1,11 @@
 use gpui_kit::component::button::{Button, ButtonVariants};
-use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
+use gpui_kit::component::input::{
+    Editor, EditorState, Input, InputEvent, InputState, Textarea, TextareaState,
+};
 use gpui_kit::component::searchable_list::SearchableListItem;
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tab::{Tab, TabBar};
-use gpui_kit::component::tag::Tag;
 use gpui_kit::component::{
     ActiveTheme, Icon, IconName, IndexPath, Sizable, StyledExt, Theme, ThemeMode,
 };
@@ -73,7 +74,7 @@ pub struct ClientView {
     auth: Entity<AuthEditor>,
     headers: Entity<KeyValueEditor>,
     body: Entity<TextareaState>,
-    response_body: Entity<TextareaState>,
+    response_body: Entity<EditorState>,
     request_tab: usize,
     response_tab: usize,
     _subscriptions: Vec<Subscription>,
@@ -89,7 +90,11 @@ impl ClientView {
         let auth = cx.new(|cx| AuthEditor::new(window, cx));
         let headers = cx.new(|cx| KeyValueEditor::new("Header", COMMON_HEADERS, window, cx));
         let body = cx.new(|cx| TextareaState::new(window, cx).placeholder("Request body"));
-        let response_body = cx.new(|cx| TextareaState::new(window, cx));
+        let response_body = cx.new(|cx| {
+            EditorState::new(window, cx)
+                .language("json")
+                .soft_wrap(true)
+        });
 
         let subscriptions = vec![
             cx.observe_in(&model, window, Self::on_model_change),
@@ -121,12 +126,14 @@ impl ClientView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let text = match model.read(cx).state() {
-            RequestState::Done(response) => pretty_body(&response.body),
-            _ => String::new(),
+        let (text, is_json) = match model.read(cx).state() {
+            RequestState::Done(response) => format_body(&response.body),
+            _ => (String::new(), false),
         };
-        self.response_body
-            .update(cx, |state, cx| state.set_value(text, window, cx));
+        self.response_body.update(cx, |state, cx| {
+            state.set_highlighter(if is_json { "json" } else { "text" }, cx);
+            state.set_value(text, window, cx);
+        });
         cx.notify();
     }
 
@@ -188,11 +195,14 @@ impl ClientView {
     }
 }
 
-/// Pretty-prints JSON; any other body is shown unchanged.
-fn pretty_body(body: &str) -> String {
-    serde_json::from_str::<serde_json::Value>(body)
+/// Pretty-prints JSON and reports whether the body was JSON; other bodies are unchanged.
+fn format_body(body: &str) -> (String, bool) {
+    match serde_json::from_str::<serde_json::Value>(body)
         .and_then(|value| serde_json::to_string_pretty(&value))
-        .unwrap_or_else(|_| body.to_string())
+    {
+        Ok(pretty) => (pretty, true),
+        Err(_) => (body.to_string(), false),
+    }
 }
 
 impl ClientView {
@@ -332,22 +342,41 @@ impl ClientView {
     }
 
     fn render_status(&self, cx: &Context<Self>) -> impl IntoElement {
-        let model = self.model.read(cx);
-        let tags = div().h_flex().gap_2().px_3().items_center().ml_auto();
+        let theme = cx.theme();
+        let row = div()
+            .h_flex()
+            .gap_3()
+            .px_3()
+            .items_center()
+            .ml_auto()
+            .text_sm();
 
-        match model.state() {
+        match self.model.read(cx).state() {
             RequestState::Done(response) => {
-                let status = format!("{} {}", response.status, response.reason);
-                let status_tag = match response.status {
-                    200..=299 => Tag::success(),
-                    400..=599 => Tag::danger(),
-                    _ => Tag::warning(),
+                let color = match response.status {
+                    200..=299 => theme.success,
+                    400..=599 => theme.danger,
+                    _ => theme.warning,
                 };
-                tags.child(status_tag.child(SharedString::from(status)))
-                    .child(Tag::secondary().child(format!("{} ms", response.elapsed.as_millis())))
-                    .child(Tag::secondary().child(format_size(response.body.len())))
+                let status = format!("{} {}", response.status, response.reason);
+                row.child(
+                    div()
+                        .font_semibold()
+                        .text_color(color)
+                        .child(SharedString::from(status)),
+                )
+                .child(
+                    div()
+                        .text_color(theme.muted_foreground)
+                        .child(format_duration(response.elapsed)),
+                )
+                .child(
+                    div()
+                        .text_color(theme.muted_foreground)
+                        .child(format_size(response.body.len())),
+                )
             }
-            _ => tags,
+            _ => row,
         }
     }
 
@@ -371,22 +400,22 @@ impl ClientView {
 
     fn render_response_content(&self, cx: &Context<Self>) -> impl IntoElement {
         let muted = cx.theme().muted_foreground;
-        let container = div().id("response-content").flex_1().min_h_0().p_4();
+        let container = div().id("response-content").flex_1().min_h_0();
 
         match self.model.read(cx).state() {
-            RequestState::Idle => container.child(Self::render_empty_state(
+            RequestState::Idle => container.p_4().child(Self::render_empty_state(
                 Icon::new(IconName::Globe).size_8(),
                 "Ready when you are",
                 Some("Enter a URL and press Send or Enter.".into()),
                 cx,
             )),
-            RequestState::Sending => container.child(Self::render_empty_state(
+            RequestState::Sending => container.p_4().child(Self::render_empty_state(
                 Spinner::new().large().color(muted),
                 "Sending request...",
                 None,
                 cx,
             )),
-            RequestState::Failed(message) => container.child(Self::render_empty_state(
+            RequestState::Failed(message) => container.p_4().child(Self::render_empty_state(
                 Icon::new(IconName::CircleAlert)
                     .size_8()
                     .text_color(cx.theme().danger),
@@ -396,7 +425,7 @@ impl ClientView {
             )),
             RequestState::Done(response) if self.response_tab == 0 => {
                 if response.body.is_empty() {
-                    container.child(Self::render_empty_state(
+                    container.p_4().child(Self::render_empty_state(
                         Icon::new(IconName::Inbox).size_8(),
                         "No response body",
                         None,
@@ -404,7 +433,7 @@ impl ClientView {
                     ))
                 } else {
                     container.child(
-                        Textarea::new(&self.response_body)
+                        Editor::new(&self.response_body)
                             .readonly(true)
                             .bordered(false)
                             .h_full(),
@@ -412,6 +441,7 @@ impl ClientView {
                 }
             }
             RequestState::Done(response) => container
+                .p_4()
                 .overflow_y_scroll()
                 .child(self.render_response_headers(response, cx)),
         }
@@ -437,6 +467,14 @@ impl ClientView {
                     )
                     .child(div().flex_1().child(SharedString::from(value.clone())))
             }))
+    }
+}
+
+fn format_duration(elapsed: std::time::Duration) -> String {
+    if elapsed.as_millis() >= 1000 {
+        format!("{:.1}s", elapsed.as_secs_f64())
+    } else {
+        format!("{}ms", elapsed.as_millis())
     }
 }
 
